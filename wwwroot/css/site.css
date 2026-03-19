@@ -1,0 +1,73 @@
+html {
+  font-size: 14px;
+}
+
+@media (min-width: 768px) {
+  html {
+    font-size: 16px;
+  }
+}
+
+.btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
+  box-shadow: 0 0 0 0.1rem rgba(255, 255, 255, 0.1), 0 0 0 0.25rem #258cfb;
+}
+
+html {
+  position: relative;
+  min-height: 100%;
+}
+
+body {
+  margin-bottom: 60px;
+}
+
+/* Console output styling */
+.console-output {
+  background-color: #0d1117;
+  color: #d4d4d4;
+  padding: 12px;
+  border-radius: 4px;
+  max-height: 400px;
+  overflow-y: auto;
+  font-size: 0.8em;
+  line-height: 1.4;
+  margin: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.console-line {
+  margin: 0;
+  padding: 0;
+}
+
+.console-wrapper {
+  padding: 0 12px 12px 12px;
+}
+
+/* Brighter action buttons for dark mode */
+.btn-outline-primary {
+  --bs-btn-color: #6ea8fe;
+  --bs-btn-border-color: #6ea8fe;
+  --bs-btn-hover-bg: #6ea8fe;
+  --bs-btn-hover-border-color: #6ea8fe;
+}
+
+.btn-outline-success {
+  --bs-btn-color: #75d98b;
+  --bs-btn-border-color: #75d98b;
+  --bs-btn-hover-bg: #75d98b;
+  --bs-btn-hover-border-color: #75d98b;
+}
+
+.btn-outline-danger {
+  --bs-btn-color: #ff6b81;
+  --bs-btn-border-color: #ff6b81;
+  --bs-btn-hover-bg: #ff6b81;
+  --bs-btn-hover-border-color: #ff6b81;
+}
+
+/* Status badge alignment */
+td .badge {
+  font-size: 0.75em;
+}

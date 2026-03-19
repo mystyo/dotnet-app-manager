@@ -1,0 +1,117 @@
+@page
+@model ProfilesModel
+@{
+    ViewData["Title"] = "Profiles";
+    var editProfile = Model.EditingProfile != null
+        ? Model.Profiles.FirstOrDefault(p => p.Name.Equals(Model.EditingProfile, StringComparison.OrdinalIgnoreCase))
+        : null;
+}
+
+<h4 class="mb-3">Profiles</h4>
+<p class="text-muted">Create profiles to group projects together. Select a profile on the Dashboard to filter visible projects.</p>
+
+@if (Model.Message != null)
+{
+    <div class="alert @(Model.IsError ? "alert-danger" : "alert-success") alert-dismissible">
+        @Model.Message
+    </div>
+}
+
+<div class="row">
+    <div class="col-md-4">
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Profiles</h5>
+
+                @if (Model.Profiles.Count > 0)
+                {
+                    <ul class="list-group mb-3">
+                        @foreach (var profile in Model.Profiles)
+                        {
+                            var isActive = Model.EditingProfile?.Equals(profile.Name, StringComparison.OrdinalIgnoreCase) == true;
+                            <li class="list-group-item d-flex justify-content-between align-items-center @(isActive ? "active" : "")">
+                                <a href="?edit=@Uri.EscapeDataString(profile.Name)"
+                                   class="text-decoration-none @(isActive ? "text-white" : "")">
+                                    @profile.Name
+                                    <span class="badge @(isActive ? "bg-light text-dark" : "bg-primary") ms-1">@profile.ProjectPaths.Count</span>
+                                </a>
+                                <form method="post" asp-page-handler="Delete" style="display:inline">
+                                    <input type="hidden" name="ProfileName" value="@profile.Name" />
+                                    <button type="submit" class="btn btn-sm @(isActive ? "btn-outline-light" : "btn-outline-danger")">Delete</button>
+                                </form>
+                            </li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <p class="text-muted small mb-3">No profiles yet.</p>
+                }
+
+                <form method="post" asp-page-handler="Create">
+                    <div class="input-group">
+                        <input type="text" class="form-control" asp-for="NewProfileName" placeholder="New profile name" />
+                        <button type="submit" class="btn btn-primary">Create</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-8">
+        @if (editProfile != null)
+        {
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Edit Profile: @editProfile.Name</h5>
+                    <p class="card-text text-muted">Select the projects to include in this profile.</p>
+
+                    <form method="post" asp-page-handler="Save">
+                        <input type="hidden" name="ProfileName" value="@editProfile.Name" />
+
+                        <div class="mb-3">
+                            <div class="d-flex gap-2 mb-2">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="select-all">Select All</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="select-none">Select None</button>
+                            </div>
+                            <div class="list-group">
+                                @foreach (var project in Model.AllProjects)
+                                {
+                                    var isSelected = editProfile.ProjectPaths.Contains(project.FullPath);
+                                    <label class="list-group-item d-flex align-items-center gap-2">
+                                        <input type="checkbox" class="form-check-input project-cb"
+                                               name="SelectedProjects" value="@project.FullPath"
+                                               @(isSelected ? "checked" : "") />
+                                        <div>
+                                            <strong>@project.Name</strong>
+                                            <br /><small class="text-muted">@project.Directory</small>
+                                        </div>
+                                    </label>
+                                }
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary">Save Profile</button>
+                    </form>
+                </div>
+            </div>
+
+            <script>
+                document.getElementById('select-all').addEventListener('click', function () {
+                    document.querySelectorAll('.project-cb').forEach(function (cb) { cb.checked = true; });
+                });
+                document.getElementById('select-none').addEventListener('click', function () {
+                    document.querySelectorAll('.project-cb').forEach(function (cb) { cb.checked = false; });
+                });
+            </script>
+        }
+        else
+        {
+            <div class="card">
+                <div class="card-body text-center text-muted py-5">
+                    Select a profile from the list to edit, or create a new one.
+                </div>
+            </div>
+        }
+    </div>
+</div>

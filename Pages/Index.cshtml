@@ -1,0 +1,237 @@
+@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Dashboard";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="mb-0">Dashboard</h4>
+        <small class="text-muted">Scanning: @string.Join(", ", Model.CurrentPaths)</small>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+        @{
+            var runningCount = Model.ActiveProcesses.Values.Count(p => p != null);
+        }
+        <span class="badge bg-info" id="running-count"
+              hx-get="/api/process/running-count"
+              hx-trigger="every 3s"
+              hx-swap="innerHTML">@runningCount</span>
+        <span class="text-muted small">running</span>
+        <select id="build-configuration" class="form-select form-select-sm" style="width:auto">
+            @foreach (var cfg in Model.BuildConfigurations)
+            {
+                <option value="@cfg">@cfg</option>
+            }
+        </select>
+        <div class="btn-group btn-group-sm">
+            <button type="button" class="btn btn-sm btn-outline-success" id="run-all-btn">Run All</button>
+            <form method="post" action="/api/process/stop-all" style="display:inline">
+                <button type="submit" class="btn btn-sm btn-outline-danger" id="stop-all-btn"
+                        @(runningCount == 0 ? "disabled" : "")>
+                    Stop All
+                </button>
+            </form>
+            <a href="/" class="btn btn-sm btn-outline-secondary">Refresh</a>
+        </div>
+    </div>
+</div>
+
+@if (Model.Projects.Count == 0)
+{
+    <div class="alert alert-info">
+        No .NET projects found in the configured folders.
+        <a asp-page="/Configuration">Configure target folder</a>.
+    </div>
+}
+else
+{
+    <div class="d-flex gap-2 mb-3">
+        <input type="text" id="project-search" class="form-control" placeholder="Filter projects by name..." autofocus />
+        <select id="profile-select" class="form-select" style="width:auto; min-width:180px"
+                onchange="window.location.href = this.value ? '/?profile=' + encodeURIComponent(this.value) : '/'">
+            <option value="">All Projects</option>
+            @foreach (var profile in Model.Profiles)
+            {
+                <option value="@profile.Name" selected="@(Model.SelectedProfile == profile.Name)">@profile.Name (@profile.ProjectPaths.Count)</option>
+            }
+        </select>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead class="table-dark">
+                <tr>
+                    <th>Project</th>
+                    <th>Framework</th>
+                    <th>Type</th>
+                    <th>Path</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var project in Model.Projects)
+                {
+                    var activeProcess = Model.ActiveProcesses.GetValueOrDefault(project.Id);
+                    var isRunning = activeProcess != null;
+                    <tr class="project-row" data-project-name="@project.Name.ToLowerInvariant()">
+                        <td>
+                            <strong>@project.Name</strong>
+                            <br /><small class="text-muted">.@project.ProjectFileType</small>
+                        </td>
+                        <td><code>@(project.TargetFramework ?? "N/A")</code></td>
+                        <td>@(project.OutputType ?? "Library")</td>
+                        <td><small class="text-muted" title="@project.FullPath">@project.Directory</small></td>
+                        <td id="status-@project.Id"
+                            hx-get="/api/process/status/@project.Id"
+                            hx-trigger="every 3s"
+                            hx-swap="innerHTML">
+                            @if (isRunning)
+                            {
+                                <span class="badge bg-info">running</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary">idle</span>
+                            }
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-primary action-btn"
+                                        data-action="build"
+                                        data-project-id="@project.Id"
+                                        data-project-path="@Uri.EscapeDataString(project.FullPath)"
+                                        data-target="#console-@project.Id">
+                                    Build
+                                </button>
+                                <button class="btn btn-outline-success action-btn"
+                                        data-action="run"
+                                        data-project-id="@project.Id"
+                                        data-project-path="@Uri.EscapeDataString(project.FullPath)"
+                                        data-target="#console-@project.Id">
+                                    Run
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    <tr class="project-row" data-project-name="@project.Name.ToLowerInvariant()">
+                        <td colspan="6" class="p-0 border-0">
+                            <div id="console-@project.Id">
+                                @if (isRunning)
+                                {
+                                    <div class="console-wrapper mt-2" hx-ext="sse" sse-connect="/api/process/stream/@activeProcess!.Id">
+                                        <div class="d-flex justify-content-between align-items-center mb-1">
+                                            <small class="text-muted">Running...</small>
+                                            <button class="btn btn-sm btn-outline-danger"
+                                                    hx-post="/api/process/stop/@activeProcess!.Id"
+                                                    hx-target="closest .console-wrapper"
+                                                    hx-swap="afterbegin">
+                                                Stop
+                                            </button>
+                                        </div>
+                                        <pre class="console-output" sse-swap="message" hx-swap="beforeend"></pre>
+                                    </div>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                    @if (project.ProjectReferences.Count > 0)
+                    {
+                        <tr class="project-row" data-project-name="@project.Name.ToLowerInvariant()">
+                            <td colspan="6" class="p-0 border-0">
+                                <details class="mx-3 mb-2">
+                                    <summary class="text-muted" style="cursor:pointer; font-size:0.85em;">
+                                        Dependencies (@project.ProjectReferences.Count project(s))
+                                    </summary>
+                                    <ul class="ms-3 mt-1 mb-2" style="font-size:0.85em;">
+                                        @foreach (var reference in project.ProjectReferences)
+                                        {
+                                            <li>@reference</li>
+                                        }
+                                    </ul>
+                                </details>
+                            </td>
+                        </tr>
+                    }
+                    @if (project.AppSettings.Count > 0)
+                    {
+                        <tr class="project-row" data-project-name="@project.Name.ToLowerInvariant()">
+                            <td colspan="6" class="p-0 border-0">
+                                <details class="mx-3 mb-2">
+                                    <summary class="text-muted" style="cursor:pointer; font-size:0.85em;">
+                                        App Settings (@project.AppSettings.Count file(s))
+                                    </summary>
+                                    @foreach (var (fileName, settings) in project.AppSettings)
+                                    {
+                                        <div class="ms-3 mt-1">
+                                            <strong class="small">@fileName</strong>
+                                            <table class="table table-sm table-bordered mt-1 mb-2" style="font-size:0.8em;">
+                                                <thead class="table-dark">
+                                                    <tr><th>Key</th><th>Value</th></tr>
+                                                </thead>
+                                                <tbody>
+                                                    @foreach (var (key, value) in settings)
+                                                    {
+                                                        <tr>
+                                                            <td><code>@key</code></td>
+                                                            <td>@value</td>
+                                                        </tr>
+                                                    }
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    }
+                                </details>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        function getSelectedConfiguration() {
+            return document.getElementById('build-configuration').value;
+        }
+
+        document.getElementById('project-search').addEventListener('input', function () {
+            var filter = this.value.toLowerCase();
+            document.querySelectorAll('.project-row').forEach(function (row) {
+                var name = row.getAttribute('data-project-name');
+                row.style.display = name.includes(filter) ? '' : 'none';
+            });
+        });
+
+        document.querySelectorAll('.action-btn').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var action = this.getAttribute('data-action');
+                var projectId = this.getAttribute('data-project-id');
+                var projectPath = this.getAttribute('data-project-path');
+                var target = this.getAttribute('data-target');
+                var config = getSelectedConfiguration();
+                var url = '/api/process/' + action + '?projectId=' + projectId + '&projectPath=' + projectPath + '&configuration=' + encodeURIComponent(config);
+                htmx.ajax('POST', url, { target: target, swap: 'innerHTML' });
+            });
+        });
+
+        document.getElementById('run-all-btn').addEventListener('click', function () {
+            var config = getSelectedConfiguration();
+            var profile = document.getElementById('profile-select').value;
+            var url = '/api/process/run-all?configuration=' + encodeURIComponent(config);
+            if (profile) url += '&profile=' + encodeURIComponent(profile);
+            var form = document.createElement('form');
+            form.method = 'POST';
+            form.action = url;
+            document.body.appendChild(form);
+            form.submit();
+        });
+
+        document.body.addEventListener('htmx:afterSwap', function (evt) {
+            if (evt.detail.target.id === 'running-count') {
+                var count = parseInt(evt.detail.target.innerText) || 0;
+                document.getElementById('stop-all-btn').disabled = count === 0;
+            }
+        });
+    </script>
+}

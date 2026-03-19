@@ -1,0 +1,86 @@
+@page
+@model ManageProjectsModel
+@{
+    ViewData["Title"] = "Manage Projects";
+}
+
+<h4 class="mb-3">Manage Projects</h4>
+<p class="text-muted">Set ignore flag and start order for each project. Changes are saved automatically.</p>
+
+@if (Model.Projects.Count == 0)
+{
+    <div class="alert alert-info">
+        No .NET projects found.
+        <a asp-page="/Configuration">Configure target folders</a>.
+    </div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead class="table-dark">
+                <tr>
+                    <th>Project</th>
+                    <th>Framework</th>
+                    <th>Path</th>
+                    <th style="width:100px">Start Order</th>
+                    <th style="width:80px">Ignored</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var project in Model.Projects)
+                {
+                    var pref = Model.Preferences.GetValueOrDefault(project.FullPath) ?? new DotnetAppManager.Models.ProjectPreference();
+                    <tr class="@(pref.Ignored ? "table-secondary text-muted" : "")">
+                        <td><strong>@project.Name</strong></td>
+                        <td><code>@(project.TargetFramework ?? "N/A")</code></td>
+                        <td><small class="text-muted">@project.Directory</small></td>
+                        <td>
+                            <input type="number" class="form-control form-control-sm pref-order"
+                                   data-project-path="@project.FullPath"
+                                   value="@pref.StartOrder" min="0" />
+                        </td>
+                        <td class="text-center">
+                            <input type="checkbox" class="form-check-input pref-ignored"
+                                   data-project-path="@project.FullPath"
+                                   @(pref.Ignored ? "checked" : "") />
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        function savePreference(projectPath, ignored, startOrder) {
+            fetch('/api/project-preferences', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ projectPath: projectPath, ignored: ignored, startOrder: startOrder })
+            });
+        }
+
+        function getRowValues(el) {
+            var row = el.closest('tr');
+            var path = el.getAttribute('data-project-path');
+            var ignored = row.querySelector('.pref-ignored').checked;
+            var startOrder = parseInt(row.querySelector('.pref-order').value) || 100;
+            return { row: row, path: path, ignored: ignored, startOrder: startOrder };
+        }
+
+        document.querySelectorAll('.pref-ignored').forEach(function (cb) {
+            cb.addEventListener('change', function () {
+                var v = getRowValues(this);
+                v.row.className = v.ignored ? 'table-secondary text-muted' : '';
+                savePreference(v.path, v.ignored, v.startOrder);
+            });
+        });
+
+        document.querySelectorAll('.pref-order').forEach(function (input) {
+            input.addEventListener('change', function () {
+                var v = getRowValues(this);
+                savePreference(v.path, v.ignored, v.startOrder);
+            });
+        });
+    </script>
+}

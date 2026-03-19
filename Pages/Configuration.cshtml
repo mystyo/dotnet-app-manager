@@ -1,0 +1,119 @@
+@page
+@model ConfigurationModel
+@{
+    ViewData["Title"] = "Configuration";
+}
+
+<h4 class="mb-3">Configuration</h4>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Target Folders</h5>
+                <p class="card-text text-muted">Add folders to scan for .NET projects.</p>
+
+                @if (Model.TargetFolderPaths.Count > 0)
+                {
+                    <ul class="list-group mb-3">
+                        @for (var i = 0; i < Model.TargetFolderPaths.Count; i++)
+                        {
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <code>@Model.TargetFolderPaths[i]</code>
+                                <form method="post" asp-page-handler="Remove" style="display:inline">
+                                    @for (var j = 0; j < Model.TargetFolderPaths.Count; j++)
+                                    {
+                                        <input type="hidden" name="TargetFolderPaths" value="@Model.TargetFolderPaths[j]" />
+                                    }
+                                    <button type="submit" name="index" value="@i" class="btn btn-sm btn-outline-danger">Remove</button>
+                                </form>
+                            </li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <div class="alert alert-warning mb-3">No folders configured.</div>
+                }
+
+                <form method="post" asp-page-handler="Add">
+                    @for (var i = 0; i < Model.TargetFolderPaths.Count; i++)
+                    {
+                        <input type="hidden" name="TargetFolderPaths" value="@Model.TargetFolderPaths[i]" />
+                    }
+                    <div class="input-group">
+                        <input type="text" class="form-control" asp-for="NewFolderPath"
+                               placeholder="/path/to/your/projects" />
+                        <button type="submit" class="btn btn-primary">Add Folder</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Project Configurations</h5>
+                <p class="card-text text-muted">Define build/run configurations (e.g. Debug, Release).</p>
+
+                @if (Model.BuildConfigurations.Count > 0)
+                {
+                    <ul class="list-group mb-3">
+                        @for (var i = 0; i < Model.BuildConfigurations.Count; i++)
+                        {
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <span>@Model.BuildConfigurations[i]</span>
+                                <form method="post" asp-page-handler="RemoveConfig" style="display:inline">
+                                    @for (var j = 0; j < Model.BuildConfigurations.Count; j++)
+                                    {
+                                        <input type="hidden" name="BuildConfigurations" value="@Model.BuildConfigurations[j]" />
+                                    }
+                                    @for (var j = 0; j < Model.TargetFolderPaths.Count; j++)
+                                    {
+                                        <input type="hidden" name="TargetFolderPaths" value="@Model.TargetFolderPaths[j]" />
+                                    }
+                                    <button type="submit" name="index" value="@i" class="btn btn-sm btn-outline-danger">Remove</button>
+                                </form>
+                            </li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <div class="alert alert-warning mb-3">No configurations defined.</div>
+                }
+
+                <form method="post" asp-page-handler="AddConfig">
+                    @for (var i = 0; i < Model.BuildConfigurations.Count; i++)
+                    {
+                        <input type="hidden" name="BuildConfigurations" value="@Model.BuildConfigurations[i]" />
+                    }
+                    @for (var i = 0; i < Model.TargetFolderPaths.Count; i++)
+                    {
+                        <input type="hidden" name="TargetFolderPaths" value="@Model.TargetFolderPaths[i]" />
+                    }
+                    <div class="input-group">
+                        <input type="text" class="form-control" asp-for="NewBuildConfiguration"
+                               placeholder="e.g. Staging" />
+                        <button type="submit" class="btn btn-primary">Add Configuration</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        @if (Model.Message != null)
+        {
+            <div class="alert @(Model.IsError ? "alert-danger" : "alert-success")">
+                @Model.Message
+            </div>
+        }
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body text-center">
+                <h5 class="card-title">Projects Found</h5>
+                <p class="display-6">@Model.ProjectCount</p>
+                <a asp-page="/Index" class="btn btn-sm btn-outline-primary">Go to Dashboard</a>
+            </div>
+        </div>
+    </div>
+</div>
