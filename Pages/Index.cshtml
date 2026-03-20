@@ -141,12 +141,44 @@ else
                             <td colspan="6" class="p-0 border-0">
                                 <details class="mx-3 mb-2">
                                     <summary class="text-muted" style="cursor:pointer; font-size:0.85em;">
-                                        Dependencies (@project.ProjectReferences.Count project(s))
+                                        Project References (@project.ProjectReferences.Count)
                                     </summary>
                                     <ul class="ms-3 mt-1 mb-2" style="font-size:0.85em;">
                                         @foreach (var reference in project.ProjectReferences)
                                         {
-                                            <li>@reference</li>
+                                            var refMissing = !Model.KnownProjectNames.Contains(reference);
+                                            <li class="@(refMissing ? "text-danger" : "")">
+                                                @reference
+                                                @if (refMissing)
+                                                {
+                                                    <small>(not found)</small>
+                                                }
+                                            </li>
+                                        }
+                                    </ul>
+                                </details>
+                            </td>
+                        </tr>
+                    }
+                    @if (project.Dependencies.Count > 0)
+                    {
+                        <tr class="project-row" data-project-name="@project.Name.ToLowerInvariant()">
+                            <td colspan="6" class="p-0 border-0">
+                                <details class="mx-3 mb-2">
+                                    <summary class="text-muted" style="cursor:pointer; font-size:0.85em;">
+                                        Dependencies (@project.Dependencies.Count)
+                                    </summary>
+                                    <ul class="ms-3 mt-1 mb-2" style="font-size:0.85em;">
+                                        @foreach (var dep in project.Dependencies)
+                                        {
+                                            var depMissing = !Model.KnownProjectNames.Contains(dep);
+                                            <li class="@(depMissing ? "text-danger" : "")">
+                                                @dep
+                                                @if (depMissing)
+                                                {
+                                                    <small>(not found)</small>
+                                                }
+                                            </li>
                                         }
                                     </ul>
                                 </details>

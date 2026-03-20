@@ -14,4 +14,5 @@ public class DiscoveredProject
     public Dictionary<string, string> AdditionalProperties { get; set; } = new();
     public Dictionary<string, Dictionary<string, string>> AppSettings { get; set; } = new();
     public List<string> ProjectReferences { get; set; } = new();
+    public List<string> Dependencies { get; set; } = new();
 }

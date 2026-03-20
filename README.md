@@ -31,7 +31,7 @@ cd dotnet-app-manager
 dotnet run
 ```
 
-Open `https://localhost:5001` (or the URL shown in the console).
+Open `https://localhost:5064` (or the URL shown in the console).
 
 ### Configure
 

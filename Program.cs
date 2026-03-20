@@ -24,5 +24,6 @@ app.MapStaticAssets();
 app.MapRazorPages().WithStaticAssets();
 
 SseEndpoints.MapSseEndpoints(app);
+ProcessEndpoints.MapProcessEndpoints(app);
 
 app.Run();

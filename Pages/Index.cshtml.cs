@@ -28,6 +28,7 @@ public class IndexModel : PageModel
     public List<Profile> Profiles { get; set; } = [];
     public string? SelectedProfile { get; set; }
     public Dictionary<string, ProcessInfo?> ActiveProcesses { get; set; } = new();
+    public HashSet<string> KnownProjectNames { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     public void OnGet([FromQuery] string? profile)
     {
@@ -53,6 +54,7 @@ public class IndexModel : PageModel
         }
 
         Projects = projects;
+        KnownProjectNames = _discoveryService.ScanAllProjectNames(CurrentPaths);
 
         foreach (var project in Projects)
         {

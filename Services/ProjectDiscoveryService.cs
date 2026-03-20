@@ -23,7 +23,7 @@ public class ProjectDiscoveryService
             .ToList();
     }
 
-    public List<DiscoveredProject> ScanFolder(string folderPath)
+    private List<DiscoveredProject> ScanFolder(string folderPath)
     {
         if (!Directory.Exists(folderPath))
             return [];
@@ -99,6 +99,16 @@ public class ProjectDiscoveryService
             .ToList();
         project.ProjectReferences = projectRefs;
 
+        // Parse custom <Dependency> elements
+        var dependencies = doc.Descendants()
+            .Where(e => e.Name.LocalName == "Dependency")
+            .Select(e => e.Attribute("Include")?.Value)
+            .Where(v => v != null)
+            .Select(v => v!)
+            .OrderBy(n => n)
+            .ToList();
+        project.Dependencies = dependencies;
+
         // Parse appsettings files
         var appSettingsFiles = Directory.EnumerateFiles(dir, "appsettings*.json");
         foreach (var settingsFile in appSettingsFiles)
@@ -119,6 +129,40 @@ public class ProjectDiscoveryService
         }
 
         return project;
+    }
+
+    /// <summary>
+    /// Scans all .csproj/.fsproj names under the parent directories of the given target paths.
+    /// This allows cross-solution resolution (e.g. merkle.loyalty can find merkle.platform projects).
+    /// </summary>
+    public HashSet<string> ScanAllProjectNames(IEnumerable<string> targetPaths)
+    {
+        var parentDirs = targetPaths
+            .Select(p => Path.GetDirectoryName(p.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)))
+            .Where(p => p != null && Directory.Exists(p))
+            .Select(p => p!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var parent in parentDirs)
+        {
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(parent, "*.csproj", SearchOption.AllDirectories)
+                    .Concat(Directory.EnumerateFiles(parent, "*.fsproj", SearchOption.AllDirectories)))
+                {
+                    names.Add(Path.GetFileNameWithoutExtension(file));
+                }
+            }
+            catch
+            {
+                // Skip inaccessible directories
+            }
+        }
+
+        return names;
     }
 
     private static void FlattenJson(JsonElement element, string prefix, Dictionary<string, string> result)
