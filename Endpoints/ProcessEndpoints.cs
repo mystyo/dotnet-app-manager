@@ -28,7 +28,7 @@ public static class ProcessEndpoints
             return Results.Content(SseEndpoints.RenderConsoleFragment(info.Id, "Starting..."), "text/html");
         });
 
-        app.MapPost("/api/process/build-chain", async (HttpContext ctx, ProcessManagerService mgr) =>
+        app.MapPost("/api/process/build-chain", async (HttpContext ctx, ProcessManagerService mgr, ProjectDiscoveryService discovery, ConfigService cfg) =>
         {
             using var doc = await JsonDocument.ParseAsync(ctx.Request.Body);
             var root = doc.RootElement;
@@ -44,8 +44,50 @@ public static class ProcessEndpoints
             if (existing != null)
                 return Results.Content(SseEndpoints.RenderConsoleFragment(existing.Id, "Already running..."), "text/html");
 
-            var info = mgr.StartBuildChain(projectId, dependencyPaths, projectPath, action, configuration);
-            return Results.Content(SseEndpoints.RenderConsoleFragment(info.Id, $"Building {dependencyPaths.Count} dep(s) then {action}..."), "text/html");
+            // Compute waves server-side for parallel execution
+            var projectMap = discovery.ScanAllProjectPaths(cfg.GetConfig().EnabledFolderPaths);
+            var depGraph = discovery.BuildDependencyGraph(projectMap);
+            var flatNodes = dependencyPaths.Select(p => new DotnetAppManager.Models.DependencyNode
+            {
+                Name = Path.GetFileNameWithoutExtension(p),
+                ProjectPath = p
+            }).ToList();
+            var waves = ProjectDiscoveryService.ComputeBuildWaves(flatNodes, depGraph);
+
+            var info = mgr.StartParallelBuildWaves(projectId, waves, action, projectPath, configuration);
+            return Results.Content(SseEndpoints.RenderConsoleFragment(info.Id, $"Building {dependencyPaths.Count} dep(s) in {waves.Count} wave(s) then {action}..."), "text/html");
+        });
+
+        app.MapPost("/api/process/build-all", (string? configuration, string? profile, ProcessManagerService mgr, ConfigService cfg, ProjectDiscoveryService discovery, ProfileService profiles) =>
+        {
+            var folderPaths = cfg.GetConfig().EnabledFolderPaths;
+
+            // If profile specified, filter to profile's project folders
+            IEnumerable<string>? profileFilter = null;
+            if (!string.IsNullOrEmpty(profile))
+            {
+                var profileData = profiles.Get(profile);
+                if (profileData != null)
+                    profileFilter = profileData.ProjectPaths;
+            }
+
+            var waves = discovery.ComputeGlobalBuildWaves(folderPaths);
+
+            // Filter waves to only include profile projects if specified
+            if (profileFilter != null)
+            {
+                var profilePaths = new HashSet<string>(profileFilter, StringComparer.OrdinalIgnoreCase);
+                waves = waves
+                    .Select(wave => wave.Where(n => profilePaths.Contains(n.ProjectPath!)).ToList())
+                    .Where(wave => wave.Count > 0)
+                    .ToList();
+            }
+
+            if (waves.Count == 0)
+                return Results.Content("<div class='alert alert-info'>No projects to build.</div>", "text/html");
+
+            var info = mgr.StartParallelBuildWaves("build-all", waves, null, null, configuration);
+            return Results.Content(SseEndpoints.RenderConsoleFragment(info.Id, $"Building all projects in {waves.Count} wave(s)..."), "text/html");
         });
 
         app.MapPost("/api/process/run-all", (string? configuration, string? profile, ProcessManagerService mgr, ConfigService cfg, ProjectDiscoveryService discovery, ProjectPreferencesService prefs, ProfileService profiles) =>

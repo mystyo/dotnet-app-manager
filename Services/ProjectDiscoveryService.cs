@@ -88,10 +88,87 @@ public class ProjectDiscoveryService
     }
 
     /// <summary>
+    /// Computes parallel build waves from a flat build order and dependency graph.
+    /// Each wave contains projects that can be built in parallel (all their deps are in earlier waves).
+    /// </summary>
+    public static List<List<DependencyNode>> ComputeBuildWaves(
+        List<DependencyNode> flatBuildOrder,
+        Dictionary<string, List<string>> depGraph)
+    {
+        var waveMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var node in flatBuildOrder)
+        {
+            var wave = 0;
+            if (depGraph.TryGetValue(node.Name, out var deps))
+            {
+                foreach (var dep in deps)
+                {
+                    if (waveMap.TryGetValue(dep, out var depWave))
+                        wave = Math.Max(wave, depWave + 1);
+                }
+            }
+            waveMap[node.Name] = wave;
+        }
+
+        return flatBuildOrder
+            .GroupBy(n => waveMap.GetValueOrDefault(n.Name, 0))
+            .OrderBy(g => g.Key)
+            .Select(g => g.ToList())
+            .ToList();
+    }
+
+    /// <summary>
+    /// Computes global build waves for ALL .csproj files (not just runnable ones).
+    /// Used for "Build All".
+    /// </summary>
+    public List<List<DependencyNode>> ComputeGlobalBuildWaves(IEnumerable<string> folderPaths)
+    {
+        var paths = folderPaths.ToList();
+        var projectMap = ScanAllProjectPaths(paths);
+        var depGraph = BuildDependencyGraph(projectMap);
+
+        // Build flat order for all projects using topological sort
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var buildOrder = new List<DependencyNode>();
+
+        foreach (var (name, path) in projectMap)
+        {
+            BuildFlatOrderRecursive(name, projectMap, depGraph, visited, buildOrder);
+        }
+
+        return ComputeBuildWaves(buildOrder, depGraph);
+    }
+
+    private static void BuildFlatOrderRecursive(
+        string name,
+        Dictionary<string, string> projectMap,
+        Dictionary<string, List<string>> depGraph,
+        HashSet<string> visited,
+        List<DependencyNode> result)
+    {
+        if (!visited.Add(name))
+            return;
+
+        if (depGraph.TryGetValue(name, out var deps))
+        {
+            foreach (var dep in deps)
+            {
+                BuildFlatOrderRecursive(dep, projectMap, depGraph, visited, result);
+            }
+        }
+
+        if (projectMap.TryGetValue(name, out var path))
+        {
+            result.Add(new DependencyNode { Name = name, ProjectPath = path });
+        }
+    }
+
+    /// <summary>
     /// Builds a dependency graph by parsing &lt;Dependency&gt; elements from ALL .csproj files
     /// across sibling solutions. Returns name -> list of dependency names.
     /// </summary>
-    private Dictionary<string, List<string>> BuildDependencyGraph(Dictionary<string, string> projectMap)
+    public Dictionary<string, List<string>> BuildDependencyGraph(Dictionary<string, string> projectMap)
     {
         var graph = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 

@@ -51,6 +51,7 @@
     }
     <div class="d-flex flex-column align-items-end gap-1">
         <div class="btn-group btn-group-sm">
+            <button type="button" class="btn btn-sm btn-outline-primary" id="build-all-btn">Build All</button>
             <button type="button" class="btn btn-sm btn-outline-success" id="run-all-btn">Run All</button>
             <button type="button" class="btn btn-sm btn-outline-success" id="run-selected-btn">Run Selected</button>
             <form method="post" action="/api/process/stop-all" style="display:inline">
@@ -91,6 +92,7 @@
 }
 else
 {
+    <div id="console-build-all"></div>
     <div class="d-flex gap-2 mb-3">
         <input type="text" id="project-search" class="form-control" placeholder="Filter projects by name..." autofocus />
         <select id="profile-select" class="form-select" style="width:auto; min-width:180px"
@@ -326,6 +328,20 @@ else
             });
         });
 
+        document.getElementById('build-all-btn').addEventListener('click', function () {
+            var config = getSelectedConfiguration();
+            var profile = document.getElementById('profile-select').value;
+            var url = '/api/process/build-all?configuration=' + encodeURIComponent(config);
+            if (profile) url += '&profile=' + encodeURIComponent(profile);
+            fetch(url, { method: 'POST' })
+                .then(function (r) { return r.text(); })
+                .then(function (html) {
+                    var target = document.getElementById('console-build-all');
+                    target.innerHTML = html;
+                    htmx.process(target);
+                });
+        });
+
         document.getElementById('run-all-btn').addEventListener('click', function () {
             var config = getSelectedConfiguration();
             var profile = document.getElementById('profile-select').value;
@@ -340,12 +356,41 @@ else
 
         document.getElementById('run-selected-btn').addEventListener('click', function () {
             var config = getSelectedConfiguration();
+            var buildDeps = document.getElementById('build-deps-checkbox').checked;
             var selected = document.querySelectorAll('.project-select-checkbox:checked');
             if (selected.length === 0) return;
             selected.forEach(function (cb) {
                 var projectId = cb.getAttribute('data-project-id');
                 var projectPath = cb.getAttribute('data-project-path');
                 var target = '#console-' + projectId;
+
+                if (buildDeps) {
+                    // Find the action button for this project to get its deps
+                    var actionBtn = document.querySelector('.action-btn[data-action="run"][data-project-id="' + projectId + '"]');
+                    var deps = actionBtn ? JSON.parse(actionBtn.getAttribute('data-dependencies') || '[]') : [];
+
+                    if (deps.length > 0) {
+                        var url = '/api/process/build-chain';
+                        var body = JSON.stringify({
+                            projectId: projectId,
+                            projectPath: decodeURIComponent(projectPath),
+                            action: 'run',
+                            configuration: config,
+                            dependencyPaths: deps
+                        });
+                        fetch(url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: body
+                        }).then(function (r) { return r.text(); })
+                          .then(function (html) {
+                              document.querySelector(target).innerHTML = html;
+                              htmx.process(document.querySelector(target));
+                          });
+                        return;
+                    }
+                }
+
                 var url = '/api/process/run?projectId=' + projectId + '&projectPath=' + projectPath + '&configuration=' + encodeURIComponent(config);
                 htmx.ajax('POST', url, { target: target, swap: 'innerHTML' });
             });

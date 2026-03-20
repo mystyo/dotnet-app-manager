@@ -113,10 +113,22 @@ public class ProcessManagerService
 
     public ProcessInfo StartBuildChain(string projectId, List<string> dependencyPaths, string targetPath, string action, string? configuration = null)
     {
+        // Convert flat dep list into waves for parallel execution
+        var waves = BuildWavesFromFlatList(dependencyPaths);
+        return StartParallelBuildWaves(projectId, waves, action, targetPath, configuration);
+    }
+
+    public ProcessInfo StartParallelBuildWaves(
+        string projectId,
+        List<List<DependencyNode>> waves,
+        string? finalAction,
+        string? finalProjectPath,
+        string? configuration)
+    {
         var info = new ProcessInfo
         {
             ProjectId = projectId,
-            Command = $"{action} (with deps)"
+            Command = finalAction != null ? $"{finalAction} (parallel deps)" : "build-all"
         };
         _processes[info.Id] = info;
 
@@ -124,42 +136,58 @@ public class ProcessManagerService
         {
             try
             {
-                // Build each dependency sequentially
-                foreach (var depPath in dependencyPaths)
+                for (var i = 0; i < waves.Count; i++)
                 {
-                    var depName = Path.GetFileNameWithoutExtension(depPath);
-                    info.AppendOutput($"[Building dependency: {depName}]");
+                    var wave = waves[i];
+                    var names = string.Join(", ", wave.Select(n => n.Name));
+                    info.AppendOutput($"[Wave {i + 1}/{waves.Count}: building {names} in parallel]");
 
-                    var args = string.IsNullOrEmpty(configuration) ? depPath : $"{depPath} -c {configuration}";
-                    var exitCode = await RunProcessToCompletionAsync(info, "build", args);
-
-                    if (exitCode != 0)
+                    var tasks = wave.Select(node => Task.Run(async () =>
                     {
-                        info.Status = ProcessStatus.Failed;
-                        info.AppendOutput($"[Dependency build failed: {depName}]");
-                        return;
+                        var args = string.IsNullOrEmpty(configuration) ? node.ProjectPath! : $"{node.ProjectPath!} -c {configuration}";
+                        var exitCode = await RunProcessToCompletionAsync(info, "build", args, node.Name);
+                        return (node.Name, exitCode);
+                    })).ToList();
+
+                    var results = await Task.WhenAll(tasks);
+
+                    foreach (var (name, exitCode) in results)
+                    {
+                        if (exitCode != 0)
+                        {
+                            info.Status = ProcessStatus.Failed;
+                            info.AppendOutput($"[Wave {i + 1} FAILED: {name} exited with code {exitCode}]");
+                            return;
+                        }
                     }
 
-                    info.AppendOutput($"[Dependency built: {depName}]");
+                    info.AppendOutput($"[Wave {i + 1} completed]");
                 }
 
-                // Now do the final action
-                var targetName = Path.GetFileNameWithoutExtension(targetPath);
-                info.AppendOutput($"[{action}: {targetName}]");
-
-                if (action == "build")
+                // Execute final action if specified
+                if (finalAction != null && finalProjectPath != null)
                 {
-                    var args = string.IsNullOrEmpty(configuration) ? targetPath : $"{targetPath} -c {configuration}";
-                    var exitCode = await RunProcessToCompletionAsync(info, "build", args);
-                    info.Status = exitCode == 0 ? ProcessStatus.Completed : ProcessStatus.Failed;
+                    var targetName = Path.GetFileNameWithoutExtension(finalProjectPath);
+                    info.AppendOutput($"[{finalAction}: {targetName}]");
+
+                    if (finalAction == "build")
+                    {
+                        var args = string.IsNullOrEmpty(configuration) ? finalProjectPath : $"{finalProjectPath} -c {configuration}";
+                        var exitCode = await RunProcessToCompletionAsync(info, "build", args, targetName);
+                        info.Status = exitCode == 0 ? ProcessStatus.Completed : ProcessStatus.Failed;
+                    }
+                    else
+                    {
+                        var args = string.IsNullOrEmpty(configuration)
+                            ? $"--project {finalProjectPath}"
+                            : $"--project {finalProjectPath} -c {configuration}";
+                        RunAttachedProcess(info, "run", args, Path.GetDirectoryName(finalProjectPath)!);
+                    }
                 }
                 else
                 {
-                    // For run, start the process and leave it running
-                    var args = string.IsNullOrEmpty(configuration)
-                        ? $"--project {targetPath}"
-                        : $"--project {targetPath} -c {configuration}";
-                    RunAttachedProcess(info, "run", args, Path.GetDirectoryName(targetPath)!);
+                    info.Status = ProcessStatus.Completed;
+                    info.AppendOutput("[All waves completed]");
                 }
             }
             catch (Exception ex)
@@ -172,7 +200,23 @@ public class ProcessManagerService
         return info;
     }
 
-    private async Task<int> RunProcessToCompletionAsync(ProcessInfo info, string dotnetCommand, string arguments)
+    private static List<List<DependencyNode>> BuildWavesFromFlatList(List<string> dependencyPaths)
+    {
+        // Simple grouping: since we receive a flat ordered list without graph info,
+        // put each dep in its own wave (preserves sequential semantics).
+        // The endpoint will compute proper waves when it has access to the discovery service.
+        return dependencyPaths.Select(path => new List<DependencyNode>
+        {
+            new() { Name = Path.GetFileNameWithoutExtension(path), ProjectPath = path }
+        }).ToList();
+    }
+
+    private Task<int> RunProcessToCompletionAsync(ProcessInfo info, string dotnetCommand, string arguments)
+    {
+        return RunProcessToCompletionAsync(info, dotnetCommand, arguments, null);
+    }
+
+    private async Task<int> RunProcessToCompletionAsync(ProcessInfo info, string dotnetCommand, string arguments, string? outputPrefix)
     {
         var tcs = new TaskCompletionSource<int>();
 
@@ -190,12 +234,14 @@ public class ProcessManagerService
 
         process.OutputDataReceived += (_, e) =>
         {
-            if (e.Data != null) info.AppendOutput(e.Data);
+            if (e.Data != null)
+                info.AppendOutput(outputPrefix != null ? $"[{outputPrefix}] {e.Data}" : e.Data);
         };
 
         process.ErrorDataReceived += (_, e) =>
         {
-            if (e.Data != null) info.AppendOutput(e.Data);
+            if (e.Data != null)
+                info.AppendOutput(outputPrefix != null ? $"[{outputPrefix}] {e.Data}" : e.Data);
         };
 
         process.Exited += (_, _) =>
