@@ -1,7 +1,35 @@
 @page
 @model IndexModel
+@using DotnetAppManager.Models
 @{
     ViewData["Title"] = "Dashboard";
+}
+
+@functions {
+    void RenderDependencyTree(List<DependencyNode> nodes, int depth, HashSet<string> rendered)
+    {
+        foreach (var node in nodes)
+        {
+            if (!rendered.Add(node.Name))
+                continue;
+
+            // Render children first (nested deps before their parent)
+            if (node.Children.Count > 0)
+            {
+                RenderDependencyTree(node.Children, depth + 1, rendered);
+            }
+
+            var missing = node.ProjectPath == null;
+            var prefix = depth > 0 ? "└ " : "";
+            <li style="padding-left: @(depth * 1.2)rem;" class="@(missing ? "text-danger" : "")">
+                @prefix@node.Name
+                @if (missing)
+                {
+                    <small>(not found)</small>
+                }
+            </li>
+        }
+    }
 }
 
 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -101,8 +129,7 @@ else
                         </td>
                         @{
                             var depPaths = System.Text.Json.JsonSerializer.Serialize(
-                                project.Dependencies
-                                    .Where(d => d.ProjectPath != null)
+                                project.DependencyBuildOrder
                                     .Select(d => d.ProjectPath!)
                                     .ToList());
                         }
@@ -176,26 +203,19 @@ else
                             </td>
                         </tr>
                     }
-                    @if (project.Dependencies.Count > 0)
+                    @if (project.DependencyTree.Count > 0)
                     {
+                        var directCount = project.DependencyNames.Count;
+                        var totalCount = project.DependencyBuildOrder.Count;
+                        var nestedCount = totalCount - directCount;
                         <tr class="project-row" data-project-name="@project.Name.ToLowerInvariant()">
                             <td colspan="6" class="p-0 border-0">
                                 <details class="mx-3 mb-2">
                                     <summary class="text-muted" style="cursor:pointer; font-size:0.85em;">
-                                        Dependencies (@project.Dependencies.Count)
+                                        Dependencies (@directCount direct@(nestedCount > 0 ? $", {nestedCount} nested" : ""))
                                     </summary>
-                                    <ul class="ms-3 mt-1 mb-2" style="font-size:0.85em;">
-                                        @foreach (var dep in project.Dependencies)
-                                        {
-                                            var depMissing = dep.ProjectPath == null;
-                                            <li class="@(depMissing ? "text-danger" : "")">
-                                                @dep.Name
-                                                @if (depMissing)
-                                                {
-                                                    <small>(not found)</small>
-                                                }
-                                            </li>
-                                        }
+                                    <ul class="ms-3 mt-1 mb-2" style="font-size:0.85em; list-style: none; padding-left: 0;">
+                                        @{ RenderDependencyTree(project.DependencyTree, 0, new HashSet<string>(StringComparer.OrdinalIgnoreCase)); }
                                     </ul>
                                 </details>
                             </td>

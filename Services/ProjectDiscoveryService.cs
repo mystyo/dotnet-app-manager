@@ -17,6 +17,7 @@ public class ProjectDiscoveryService
     {
         var paths = folderPaths.ToList();
         var projectMap = ScanAllProjectPaths(paths);
+        var depGraph = BuildDependencyGraph(projectMap);
 
         var projects = paths
             .SelectMany(ScanFolder)
@@ -25,17 +26,97 @@ public class ProjectDiscoveryService
             .OrderBy(p => p.Name)
             .ToList();
 
-        // Resolve dependency paths
+        // Resolve dependency trees and build order
         foreach (var project in projects)
         {
-            foreach (var dep in project.Dependencies)
+            project.DependencyTree = project.DependencyNames
+                .Select(name => BuildDependencyTree(name, projectMap, depGraph, []))
+                .ToList();
+
+            // Compute flattened build order (leaves first, no duplicates)
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var buildOrder = new List<DependencyNode>();
+            foreach (var node in project.DependencyTree)
             {
-                if (projectMap.TryGetValue(dep.Name, out var depPath))
-                    dep.ProjectPath = depPath;
+                FlattenBuildOrder(node, visited, buildOrder);
             }
+            project.DependencyBuildOrder = buildOrder;
         }
 
         return projects;
+    }
+
+    private static DependencyNode BuildDependencyTree(
+        string name,
+        Dictionary<string, string> projectMap,
+        Dictionary<string, List<string>> depGraph,
+        HashSet<string> ancestors)
+    {
+        var node = new DependencyNode
+        {
+            Name = name,
+            ProjectPath = projectMap.GetValueOrDefault(name)
+        };
+
+        // Prevent circular dependencies
+        if (!ancestors.Add(name))
+            return node;
+
+        if (depGraph.TryGetValue(name, out var children))
+        {
+            foreach (var child in children)
+            {
+                node.Children.Add(BuildDependencyTree(child, projectMap, depGraph, new HashSet<string>(ancestors, StringComparer.OrdinalIgnoreCase)));
+            }
+        }
+
+        return node;
+    }
+
+    private static void FlattenBuildOrder(DependencyNode node, HashSet<string> visited, List<DependencyNode> result)
+    {
+        // Process children first (leaves before parents)
+        foreach (var child in node.Children)
+        {
+            FlattenBuildOrder(child, visited, result);
+        }
+
+        if (node.ProjectPath != null && visited.Add(node.Name))
+        {
+            result.Add(node);
+        }
+    }
+
+    /// <summary>
+    /// Builds a dependency graph by parsing &lt;Dependency&gt; elements from ALL .csproj files
+    /// across sibling solutions. Returns name -> list of dependency names.
+    /// </summary>
+    private Dictionary<string, List<string>> BuildDependencyGraph(Dictionary<string, string> projectMap)
+    {
+        var graph = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (name, path) in projectMap)
+        {
+            try
+            {
+                var doc = XDocument.Load(path);
+                var deps = doc.Descendants()
+                    .Where(e => e.Name.LocalName == "Dependency")
+                    .Select(e => e.Attribute("Include")?.Value)
+                    .Where(v => v != null)
+                    .Select(v => v!)
+                    .ToList();
+
+                if (deps.Count > 0)
+                    graph[name] = deps;
+            }
+            catch
+            {
+                // Skip unparseable files
+            }
+        }
+
+        return graph;
     }
 
     private List<DiscoveredProject> ScanFolder(string folderPath)
@@ -114,15 +195,15 @@ public class ProjectDiscoveryService
             .ToList();
         project.ProjectReferences = projectRefs;
 
-        // Parse custom <Dependency> elements
-        var dependencies = doc.Descendants()
+        // Parse custom <Dependency> elements (names only; tree resolved later)
+        var dependencyNames = doc.Descendants()
             .Where(e => e.Name.LocalName == "Dependency")
             .Select(e => e.Attribute("Include")?.Value)
             .Where(v => v != null)
-            .Select(v => new DependencyInfo { Name = v! })
-            .OrderBy(d => d.Name)
+            .Select(v => v!)
+            .OrderBy(n => n)
             .ToList();
-        project.Dependencies = dependencies;
+        project.DependencyNames = dependencyNames;
 
         // Parse appsettings files
         var appSettingsFiles = Directory.EnumerateFiles(dir, "appsettings*.json");
