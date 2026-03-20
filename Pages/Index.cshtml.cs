@@ -33,7 +33,7 @@ public class IndexModel : PageModel
     public void OnGet([FromQuery] string? profile)
     {
         var config = _configService.GetConfig();
-        CurrentPaths = config.TargetFolderPaths;
+        CurrentPaths = config.EnabledFolderPaths;
         BuildConfigurations = config.BuildConfigurations;
         Profiles = _profileService.GetAll();
         SelectedProfile = profile;
@@ -54,7 +54,7 @@ public class IndexModel : PageModel
         }
 
         Projects = projects;
-        KnownProjectPaths = _discoveryService.ScanAllProjectPaths(CurrentPaths);
+        KnownProjectPaths = _discoveryService.ScanAllProjectPaths(config.AllFolderPaths);
 
         foreach (var project in Projects)
         {

@@ -28,18 +28,35 @@ public class ConfigService
                 // Support legacy single-path config
                 if (root.TryGetProperty("TargetFolderPath", out var singlePath))
                 {
-                    return new AppConfig { TargetFolderPaths = [singlePath.GetString()!] };
+                    return new AppConfig { TargetFolders = [new TargetFolder { Path = singlePath.GetString()! }] };
                 }
 
-                var config = JsonSerializer.Deserialize<AppConfig>(json);
-                if (config != null && config.TargetFolderPaths.Count > 0)
+                // Support legacy TargetFolderPaths (list of strings)
+                if (root.TryGetProperty("TargetFolderPaths", out var legacyPaths) && legacyPaths.ValueKind == JsonValueKind.Array)
                 {
+                    var config = new AppConfig();
+                    foreach (var item in legacyPaths.EnumerateArray())
+                    {
+                        config.TargetFolders.Add(new TargetFolder { Path = item.GetString()! });
+                    }
+                    if (root.TryGetProperty("BuildConfigurations", out var cfgs) && cfgs.ValueKind == JsonValueKind.Array)
+                    {
+                        config.BuildConfigurations = cfgs.EnumerateArray().Select(e => e.GetString()!).ToList();
+                    }
                     if (config.BuildConfigurations.Count == 0)
                         config.BuildConfigurations = ["Debug", "Release"];
                     return config;
                 }
+
+                var parsed = JsonSerializer.Deserialize<AppConfig>(json);
+                if (parsed != null && parsed.TargetFolders.Count > 0)
+                {
+                    if (parsed.BuildConfigurations.Count == 0)
+                        parsed.BuildConfigurations = ["Debug", "Release"];
+                    return parsed;
+                }
             }
-            return new AppConfig { TargetFolderPaths = [_defaultTargetFolder] };
+            return new AppConfig { TargetFolders = [new TargetFolder { Path = _defaultTargetFolder }] };
         }
     }
 

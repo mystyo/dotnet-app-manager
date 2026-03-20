@@ -23,7 +23,7 @@ public class ManageProjectsModel : PageModel
     public void OnGet()
     {
         var config = _configService.GetConfig();
-        Projects = _discoveryService.ScanFolders(config.TargetFolderPaths);
+        Projects = _discoveryService.ScanFolders(config.EnabledFolderPaths);
         Preferences = _preferencesService.GetAll();
     }
 }

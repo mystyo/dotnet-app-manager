@@ -51,7 +51,7 @@ public static class ProcessEndpoints
         app.MapPost("/api/process/run-all", (string? configuration, string? profile, ProcessManagerService mgr, ConfigService cfg, ProjectDiscoveryService discovery, ProjectPreferencesService prefs, ProfileService profiles) =>
         {
             var allPrefs = prefs.GetAll();
-            var filtered = discovery.ScanFolders(cfg.GetConfig().TargetFolderPaths)
+            var filtered = discovery.ScanFolders(cfg.GetConfig().EnabledFolderPaths)
                 .Where(p => !(allPrefs.GetValueOrDefault(p.FullPath)?.Ignored ?? false));
 
             if (!string.IsNullOrEmpty(profile))

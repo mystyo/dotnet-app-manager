@@ -100,7 +100,7 @@ public class ProfilesModel : PageModel
         Profiles = _profileService.GetAll();
         var config = _configService.GetConfig();
         var allPrefs = _preferencesService.GetAll();
-        AllProjects = _discoveryService.ScanFolders(config.TargetFolderPaths)
+        AllProjects = _discoveryService.ScanFolders(config.EnabledFolderPaths)
             .Where(p => !(allPrefs.GetValueOrDefault(p.FullPath)?.Ignored ?? false))
             .ToList();
     }

@@ -13,18 +13,24 @@
                 <h5 class="card-title">Target Folders</h5>
                 <p class="card-text text-muted">Add folders to scan for .NET projects.</p>
 
-                @if (Model.TargetFolderPaths.Count > 0)
+                @if (Model.TargetFolders.Count > 0)
                 {
                     <ul class="list-group mb-3">
-                        @for (var i = 0; i < Model.TargetFolderPaths.Count; i++)
+                        @for (var i = 0; i < Model.TargetFolders.Count; i++)
                         {
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                <code>@Model.TargetFolderPaths[i]</code>
+                            var folder = Model.TargetFolders[i];
+                            <li class="list-group-item d-flex justify-content-between align-items-center @(!folder.Enabled ? "text-muted" : "")">
+                                <div class="d-flex align-items-center gap-2">
+                                    <form method="post" asp-page-handler="Toggle" style="display:inline">
+                                        <button type="submit" name="index" value="@i"
+                                                class="btn btn-sm @(folder.Enabled ? "btn-outline-success" : "btn-outline-secondary")"
+                                                title="@(folder.Enabled ? "Disable" : "Enable")">
+                                            @(folder.Enabled ? "On" : "Off")
+                                        </button>
+                                    </form>
+                                    <code class="@(!folder.Enabled ? "text-decoration-line-through" : "")">@folder.Path</code>
+                                </div>
                                 <form method="post" asp-page-handler="Remove" style="display:inline">
-                                    @for (var j = 0; j < Model.TargetFolderPaths.Count; j++)
-                                    {
-                                        <input type="hidden" name="TargetFolderPaths" value="@Model.TargetFolderPaths[j]" />
-                                    }
                                     <button type="submit" name="index" value="@i" class="btn btn-sm btn-outline-danger">Remove</button>
                                 </form>
                             </li>
@@ -37,10 +43,6 @@
                 }
 
                 <form method="post" asp-page-handler="Add">
-                    @for (var i = 0; i < Model.TargetFolderPaths.Count; i++)
-                    {
-                        <input type="hidden" name="TargetFolderPaths" value="@Model.TargetFolderPaths[i]" />
-                    }
                     <div class="input-group">
                         <input type="text" class="form-control" asp-for="NewFolderPath"
                                placeholder="/path/to/your/projects" />
@@ -63,14 +65,6 @@
                             <li class="list-group-item d-flex justify-content-between align-items-center">
                                 <span>@Model.BuildConfigurations[i]</span>
                                 <form method="post" asp-page-handler="RemoveConfig" style="display:inline">
-                                    @for (var j = 0; j < Model.BuildConfigurations.Count; j++)
-                                    {
-                                        <input type="hidden" name="BuildConfigurations" value="@Model.BuildConfigurations[j]" />
-                                    }
-                                    @for (var j = 0; j < Model.TargetFolderPaths.Count; j++)
-                                    {
-                                        <input type="hidden" name="TargetFolderPaths" value="@Model.TargetFolderPaths[j]" />
-                                    }
                                     <button type="submit" name="index" value="@i" class="btn btn-sm btn-outline-danger">Remove</button>
                                 </form>
                             </li>
@@ -83,14 +77,6 @@
                 }
 
                 <form method="post" asp-page-handler="AddConfig">
-                    @for (var i = 0; i < Model.BuildConfigurations.Count; i++)
-                    {
-                        <input type="hidden" name="BuildConfigurations" value="@Model.BuildConfigurations[i]" />
-                    }
-                    @for (var i = 0; i < Model.TargetFolderPaths.Count; i++)
-                    {
-                        <input type="hidden" name="TargetFolderPaths" value="@Model.TargetFolderPaths[i]" />
-                    }
                     <div class="input-group">
                         <input type="text" class="form-control" asp-for="NewBuildConfiguration"
                                placeholder="e.g. Staging" />
