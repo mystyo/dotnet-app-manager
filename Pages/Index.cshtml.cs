@@ -25,6 +25,7 @@ public class IndexModel : PageModel
     public List<DiscoveredProject> Projects { get; set; } = [];
     public List<string> CurrentPaths { get; set; } = [];
     public List<string> BuildConfigurations { get; set; } = [];
+    public string? DefaultBuildConfiguration { get; set; }
     public List<Profile> Profiles { get; set; } = [];
     public string? SelectedProfile { get; set; }
     public Dictionary<string, ProcessInfo?> ActiveProcesses { get; set; } = new();
@@ -35,6 +36,7 @@ public class IndexModel : PageModel
         var config = _configService.GetConfig();
         CurrentPaths = config.EnabledFolderPaths;
         BuildConfigurations = config.BuildConfigurations;
+        DefaultBuildConfiguration = config.DefaultBuildConfiguration;
         Profiles = _profileService.GetAll();
         SelectedProfile = profile;
 

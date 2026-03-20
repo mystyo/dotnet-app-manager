@@ -6,6 +6,7 @@ public class AppConfig
 {
     public List<TargetFolder> TargetFolders { get; set; } = [];
     public List<string> BuildConfigurations { get; set; } = ["Debug", "Release"];
+    public string? DefaultBuildConfiguration { get; set; }
 
     [JsonIgnore]
     public List<string> EnabledFolderPaths => TargetFolders

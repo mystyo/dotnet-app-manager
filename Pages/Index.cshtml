@@ -6,7 +6,7 @@
 }
 
 @functions {
-    void RenderDependencyTree(List<DependencyNode> nodes, int depth, HashSet<string> rendered)
+    void RenderDependencyTree(List<DependencyNode> nodes, int depth, HashSet<string> rendered, string ownerProjectId)
     {
         foreach (var node in nodes)
         {
@@ -16,16 +16,25 @@
             // Render children first (nested deps before their parent)
             if (node.Children.Count > 0)
             {
-                RenderDependencyTree(node.Children, depth + 1, rendered);
+                RenderDependencyTree(node.Children, depth + 1, rendered, ownerProjectId);
             }
 
             var missing = node.ProjectPath == null;
             var prefix = depth > 0 ? "└ " : "";
-            <li style="padding-left: @(depth * 1.2)rem;" class="@(missing ? "text-danger" : "")">
-                @prefix@node.Name
+            <li style="padding-left: @(depth * 1.2)rem;" class="d-flex align-items-center gap-2 @(missing ? "text-danger" : "")">
+                <span>@prefix@node.Name</span>
                 @if (missing)
                 {
                     <small>(not found)</small>
+                }
+                else
+                {
+                    <button class="btn btn-outline-primary dep-build-btn" style="padding:0 .35rem; font-size:0.75em; line-height:1.4;"
+                            data-dep-path="@node.ProjectPath"
+                            data-dep-name="@node.Name"
+                            data-owner-project-id="@ownerProjectId">
+                        Build
+                    </button>
                 }
             </li>
         }
@@ -61,7 +70,8 @@
             <select id="build-configuration" class="form-select form-select-sm" style="width:auto">
                 @foreach (var cfg in Model.BuildConfigurations)
                 {
-                    <option value="@cfg">@cfg</option>
+                    var isDefault = string.Equals(cfg, Model.DefaultBuildConfiguration, StringComparison.OrdinalIgnoreCase);
+                    <option value="@cfg" selected="@isDefault">@cfg</option>
                 }
             </select>
             <div class="form-check form-check-inline mb-0">
@@ -137,7 +147,7 @@ else
                                     .ToList());
                         }
                         <td>
-                            <div class="btn-group btn-group-sm">
+                            <div class="btn-group btn-group-sm" id="actions-@project.Id">
                                 <button class="btn btn-outline-primary action-btn"
                                         data-action="build"
                                         data-project-id="@project.Id"
@@ -218,7 +228,7 @@ else
                                         Dependencies (@directCount direct@(nestedCount > 0 ? $", {nestedCount} nested" : ""))
                                     </summary>
                                     <ul class="ms-3 mt-1 mb-2" style="font-size:0.85em; list-style: none; padding-left: 0;">
-                                        @{ RenderDependencyTree(project.DependencyTree, 0, new HashSet<string>(StringComparer.OrdinalIgnoreCase)); }
+                                        @{ RenderDependencyTree(project.DependencyTree, 0, new HashSet<string>(StringComparer.OrdinalIgnoreCase), project.Id); }
                                     </ul>
                                 </details>
                             </td>
@@ -341,11 +351,72 @@ else
             });
         });
 
+        function setProjectActionsDisabled(projectId, disabled) {
+            var group = document.getElementById('actions-' + projectId);
+            if (!group) return;
+            group.querySelectorAll('button').forEach(function (btn) {
+                btn.disabled = disabled;
+            });
+        }
+
+        document.body.addEventListener('click', function (e) {
+            var btn = e.target.closest('.dep-build-btn');
+            if (!btn) return;
+
+            var depPath = btn.getAttribute('data-dep-path');
+            var depName = btn.getAttribute('data-dep-name');
+            var ownerProjectId = btn.getAttribute('data-owner-project-id');
+            var config = getSelectedConfiguration();
+            var target = '#console-' + ownerProjectId;
+
+            // Disable the project's Build/Run buttons
+            setProjectActionsDisabled(ownerProjectId, true);
+            btn.disabled = true;
+
+            var url = '/api/process/build?projectId=' + ownerProjectId + '&projectPath=' + encodeURIComponent(depPath) + '&configuration=' + encodeURIComponent(config);
+            fetch(url, { method: 'POST' })
+                .then(function (r) { return r.text(); })
+                .then(function (html) {
+                    document.querySelector(target).innerHTML = html;
+                    htmx.process(document.querySelector(target));
+
+                    // Poll for completion to re-enable buttons
+                    var pollInterval = setInterval(function () {
+                        var consoleEl = document.querySelector(target);
+                        // SSE connection closed means build finished (sse-connect attribute removed or details no longer has open stream)
+                        var sseEl = consoleEl && consoleEl.querySelector('[sse-connect]');
+                        if (!sseEl || !sseEl.querySelector('.console-output')) {
+                            clearInterval(pollInterval);
+                            setProjectActionsDisabled(ownerProjectId, false);
+                            btn.disabled = false;
+                            return;
+                        }
+                        // Check if the stream has ended by looking for a status badge
+                        var statusBadge = sseEl.querySelector('.badge');
+                        if (statusBadge) {
+                            clearInterval(pollInterval);
+                            setProjectActionsDisabled(ownerProjectId, false);
+                            btn.disabled = false;
+                        }
+                    }, 1000);
+                });
+        });
+
         document.body.addEventListener('htmx:afterSwap', function (evt) {
             if (evt.detail.target.id === 'running-count') {
                 var count = parseInt(evt.detail.target.innerText) || 0;
                 document.getElementById('stop-all-btn').disabled = count === 0;
             }
+        });
+
+        // Re-enable action buttons when SSE close event fires (build/run finished)
+        document.body.addEventListener('htmx:sseClose', function (evt) {
+            var wrapper = evt.target.closest('.console-wrapper');
+            if (!wrapper) return;
+            var consoleDiv = wrapper.closest('[id^="console-"]');
+            if (!consoleDiv) return;
+            var projectId = consoleDiv.id.replace('console-', '');
+            setProjectActionsDisabled(projectId, false);
         });
     </script>
 }

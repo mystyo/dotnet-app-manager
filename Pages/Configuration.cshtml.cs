@@ -18,6 +18,7 @@ public class ConfigurationModel : PageModel
 
     public List<TargetFolder> TargetFolders { get; set; } = [];
     public List<string> BuildConfigurations { get; set; } = [];
+    public string? DefaultBuildConfiguration { get; set; }
 
     [BindProperty]
     public string? NewFolderPath { get; set; }
@@ -120,6 +121,15 @@ public class ConfigurationModel : PageModel
         return Page();
     }
 
+    public IActionResult OnPostSetDefaultConfig(string name)
+    {
+        LoadFromConfig();
+        DefaultBuildConfiguration = name;
+        SaveAndReload();
+        Message = $"Configuration \"{name}\" set as default.";
+        return Page();
+    }
+
     public IActionResult OnPostRemoveConfig(int index)
     {
         LoadFromConfig();
@@ -128,6 +138,8 @@ public class ConfigurationModel : PageModel
         {
             var removed = BuildConfigurations[index];
             BuildConfigurations.RemoveAt(index);
+            if (string.Equals(DefaultBuildConfiguration, removed, StringComparison.OrdinalIgnoreCase))
+                DefaultBuildConfiguration = null;
             SaveAndReload();
             Message = $"Configuration \"{removed}\" removed.";
         }
@@ -140,6 +152,7 @@ public class ConfigurationModel : PageModel
         var config = _configService.GetConfig();
         TargetFolders = config.TargetFolders;
         BuildConfigurations = config.BuildConfigurations;
+        DefaultBuildConfiguration = config.DefaultBuildConfiguration;
         ProjectCount = _discoveryService.ScanFolders(config.EnabledFolderPaths).Count;
     }
 
@@ -148,7 +161,8 @@ public class ConfigurationModel : PageModel
         _configService.SaveConfig(new AppConfig
         {
             TargetFolders = TargetFolders,
-            BuildConfigurations = BuildConfigurations
+            BuildConfigurations = BuildConfigurations,
+            DefaultBuildConfiguration = DefaultBuildConfiguration
         });
         ProjectCount = _discoveryService.ScanFolders(
             TargetFolders.Where(f => f.Enabled).Select(f => f.Path).ToList()
