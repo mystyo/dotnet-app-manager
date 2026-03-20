@@ -37,27 +37,13 @@
         <h4 class="mb-0">Dashboard</h4>
         <small class="text-muted">Scanning: @string.Join(", ", Model.CurrentPaths)</small>
     </div>
-    <div class="d-flex align-items-center gap-2">
-        @{
-            var runningCount = Model.ActiveProcesses.Values.Count(p => p != null);
-        }
-        <span class="badge bg-info" id="running-count"
-              hx-get="/api/process/running-count"
-              hx-trigger="every 3s"
-              hx-swap="innerHTML">@runningCount</span>
-        <span class="text-muted small">running</span>
-        <select id="build-configuration" class="form-select form-select-sm" style="width:auto">
-            @foreach (var cfg in Model.BuildConfigurations)
-            {
-                <option value="@cfg">@cfg</option>
-            }
-        </select>
-        <div class="form-check form-check-inline">
-            <input class="form-check-input" type="checkbox" id="build-deps-checkbox" checked>
-            <label class="form-check-label small" for="build-deps-checkbox">Build Dependencies</label>
-        </div>
+    @{
+        var runningCount = Model.ActiveProcesses.Values.Count(p => p != null);
+    }
+    <div class="d-flex flex-column align-items-end gap-1">
         <div class="btn-group btn-group-sm">
             <button type="button" class="btn btn-sm btn-outline-success" id="run-all-btn">Run All</button>
+            <button type="button" class="btn btn-sm btn-outline-success" id="run-selected-btn">Run Selected</button>
             <form method="post" action="/api/process/stop-all" style="display:inline">
                 <button type="submit" class="btn btn-sm btn-outline-danger" id="stop-all-btn"
                         @(runningCount == 0 ? "disabled" : "")>
@@ -65,6 +51,23 @@
                 </button>
             </form>
             <a href="/" class="btn btn-sm btn-outline-secondary">Refresh</a>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-info" id="running-count"
+                  hx-get="/api/process/running-count"
+                  hx-trigger="every 3s"
+                  hx-swap="innerHTML">@runningCount</span>
+            <span class="text-muted small">running</span>
+            <select id="build-configuration" class="form-select form-select-sm" style="width:auto">
+                @foreach (var cfg in Model.BuildConfigurations)
+                {
+                    <option value="@cfg">@cfg</option>
+                }
+            </select>
+            <div class="form-check form-check-inline mb-0">
+                <input class="form-check-input" type="checkbox" id="build-deps-checkbox" checked>
+                <label class="form-check-label small" for="build-deps-checkbox">Build Dependencies</label>
+            </div>
         </div>
     </div>
 </div>
@@ -93,9 +96,9 @@ else
         <table class="table table-hover align-middle">
             <thead class="table-dark">
                 <tr>
+                    <th style="width:1rem"><input type="checkbox" id="select-all-checkbox" checked></th>
                     <th>Project</th>
                     <th>Framework</th>
-                    <th>Type</th>
                     <th>Path</th>
                     <th>Status</th>
                     <th>Actions</th>
@@ -107,12 +110,12 @@ else
                     var activeProcess = Model.ActiveProcesses.GetValueOrDefault(project.Id);
                     var isRunning = activeProcess != null;
                     <tr class="project-row" data-project-name="@project.Name.ToLowerInvariant()">
+                        <td><input type="checkbox" class="project-select-checkbox" data-project-id="@project.Id" data-project-path="@Uri.EscapeDataString(project.FullPath)" checked></td>
                         <td>
                             <strong>@project.Name</strong>
                             <br /><small class="text-muted">.@project.ProjectFileType</small>
                         </td>
                         <td><code>@(project.TargetFramework ?? "N/A")</code></td>
-                        <td>@(project.OutputType ?? "Library")</td>
                         <td><small class="text-muted" title="@project.FullPath">@project.Directory</small></td>
                         <td id="status-@project.Id"
                             hx-get="/api/process/status/@project.Id"
@@ -306,6 +309,13 @@ else
             });
         });
 
+        document.getElementById('select-all-checkbox').addEventListener('change', function () {
+            var checked = this.checked;
+            document.querySelectorAll('.project-select-checkbox').forEach(function (cb) {
+                cb.checked = checked;
+            });
+        });
+
         document.getElementById('run-all-btn').addEventListener('click', function () {
             var config = getSelectedConfiguration();
             var profile = document.getElementById('profile-select').value;
@@ -316,6 +326,19 @@ else
             form.action = url;
             document.body.appendChild(form);
             form.submit();
+        });
+
+        document.getElementById('run-selected-btn').addEventListener('click', function () {
+            var config = getSelectedConfiguration();
+            var selected = document.querySelectorAll('.project-select-checkbox:checked');
+            if (selected.length === 0) return;
+            selected.forEach(function (cb) {
+                var projectId = cb.getAttribute('data-project-id');
+                var projectPath = cb.getAttribute('data-project-path');
+                var target = '#console-' + projectId;
+                var url = '/api/process/run?projectId=' + projectId + '&projectPath=' + projectPath + '&configuration=' + encodeURIComponent(config);
+                htmx.ajax('POST', url, { target: target, swap: 'innerHTML' });
+            });
         });
 
         document.body.addEventListener('htmx:afterSwap', function (evt) {
