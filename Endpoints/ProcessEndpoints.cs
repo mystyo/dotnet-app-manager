@@ -28,6 +28,26 @@ public static class ProcessEndpoints
             return Results.Content(SseEndpoints.RenderConsoleFragment(info.Id, "Starting..."), "text/html");
         });
 
+        app.MapPost("/api/process/build-chain", async (HttpContext ctx, ProcessManagerService mgr) =>
+        {
+            using var doc = await JsonDocument.ParseAsync(ctx.Request.Body);
+            var root = doc.RootElement;
+            var projectId = root.GetProperty("projectId").GetString()!;
+            var projectPath = root.GetProperty("projectPath").GetString()!;
+            var action = root.GetProperty("action").GetString()!;
+            var configuration = root.TryGetProperty("configuration", out var cfgEl) ? cfgEl.GetString() : null;
+            var dependencyPaths = root.GetProperty("dependencyPaths").EnumerateArray()
+                .Select(e => e.GetString()!)
+                .ToList();
+
+            var existing = mgr.GetActiveProcess(projectId);
+            if (existing != null)
+                return Results.Content(SseEndpoints.RenderConsoleFragment(existing.Id, "Already running..."), "text/html");
+
+            var info = mgr.StartBuildChain(projectId, dependencyPaths, projectPath, action, configuration);
+            return Results.Content(SseEndpoints.RenderConsoleFragment(info.Id, $"Building {dependencyPaths.Count} dep(s) then {action}..."), "text/html");
+        });
+
         app.MapPost("/api/process/run-all", (string? configuration, string? profile, ProcessManagerService mgr, ConfigService cfg, ProjectDiscoveryService discovery, ProjectPreferencesService prefs, ProfileService profiles) =>
         {
             var allPrefs = prefs.GetAll();

@@ -15,12 +15,27 @@ public class ProjectDiscoveryService
 
     public List<DiscoveredProject> ScanFolders(IEnumerable<string> folderPaths)
     {
-        return folderPaths
+        var paths = folderPaths.ToList();
+        var projectMap = ScanAllProjectPaths(paths);
+
+        var projects = paths
             .SelectMany(ScanFolder)
             .GroupBy(p => p.Id)
             .Select(g => g.First())
             .OrderBy(p => p.Name)
             .ToList();
+
+        // Resolve dependency paths
+        foreach (var project in projects)
+        {
+            foreach (var dep in project.Dependencies)
+            {
+                if (projectMap.TryGetValue(dep.Name, out var depPath))
+                    dep.ProjectPath = depPath;
+            }
+        }
+
+        return projects;
     }
 
     private List<DiscoveredProject> ScanFolder(string folderPath)
@@ -104,8 +119,8 @@ public class ProjectDiscoveryService
             .Where(e => e.Name.LocalName == "Dependency")
             .Select(e => e.Attribute("Include")?.Value)
             .Where(v => v != null)
-            .Select(v => v!)
-            .OrderBy(n => n)
+            .Select(v => new DependencyInfo { Name = v! })
+            .OrderBy(d => d.Name)
             .ToList();
         project.Dependencies = dependencies;
 
@@ -132,10 +147,10 @@ public class ProjectDiscoveryService
     }
 
     /// <summary>
-    /// Scans all .csproj/.fsproj names under the parent directories of the given target paths.
-    /// This allows cross-solution resolution (e.g. merkle.loyalty can find merkle.platform projects).
+    /// Scans all .csproj/.fsproj under the parent directories of the given target paths.
+    /// Returns a map of project name -> .csproj path for cross-solution resolution.
     /// </summary>
-    public HashSet<string> ScanAllProjectNames(IEnumerable<string> targetPaths)
+    public Dictionary<string, string> ScanAllProjectPaths(IEnumerable<string> targetPaths)
     {
         var parentDirs = targetPaths
             .Select(p => Path.GetDirectoryName(p.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)))
@@ -144,7 +159,7 @@ public class ProjectDiscoveryService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var parent in parentDirs)
         {
@@ -153,7 +168,8 @@ public class ProjectDiscoveryService
                 foreach (var file in Directory.EnumerateFiles(parent, "*.csproj", SearchOption.AllDirectories)
                     .Concat(Directory.EnumerateFiles(parent, "*.fsproj", SearchOption.AllDirectories)))
                 {
-                    names.Add(Path.GetFileNameWithoutExtension(file));
+                    var name = Path.GetFileNameWithoutExtension(file);
+                    map.TryAdd(name, file);
                 }
             }
             catch
@@ -162,7 +178,7 @@ public class ProjectDiscoveryService
             }
         }
 
-        return names;
+        return map;
     }
 
     private static void FlattenJson(JsonElement element, string prefix, Dictionary<string, string> result)

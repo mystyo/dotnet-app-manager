@@ -24,6 +24,10 @@
                 <option value="@cfg">@cfg</option>
             }
         </select>
+        <div class="form-check form-check-inline">
+            <input class="form-check-input" type="checkbox" id="build-deps-checkbox" checked>
+            <label class="form-check-label small" for="build-deps-checkbox">Build Dependencies</label>
+        </div>
         <div class="btn-group btn-group-sm">
             <button type="button" class="btn btn-sm btn-outline-success" id="run-all-btn">Run All</button>
             <form method="post" action="/api/process/stop-all" style="display:inline">
@@ -95,20 +99,29 @@ else
                                 <span class="badge bg-secondary">idle</span>
                             }
                         </td>
+                        @{
+                            var depPaths = System.Text.Json.JsonSerializer.Serialize(
+                                project.Dependencies
+                                    .Where(d => d.ProjectPath != null)
+                                    .Select(d => d.ProjectPath!)
+                                    .ToList());
+                        }
                         <td>
                             <div class="btn-group btn-group-sm">
                                 <button class="btn btn-outline-primary action-btn"
                                         data-action="build"
                                         data-project-id="@project.Id"
                                         data-project-path="@Uri.EscapeDataString(project.FullPath)"
-                                        data-target="#console-@project.Id">
+                                        data-target="#console-@project.Id"
+                                        data-dependencies="@depPaths">
                                     Build
                                 </button>
                                 <button class="btn btn-outline-success action-btn"
                                         data-action="run"
                                         data-project-id="@project.Id"
                                         data-project-path="@Uri.EscapeDataString(project.FullPath)"
-                                        data-target="#console-@project.Id">
+                                        data-target="#console-@project.Id"
+                                        data-dependencies="@depPaths">
                                     Run
                                 </button>
                             </div>
@@ -146,7 +159,7 @@ else
                                     <ul class="ms-3 mt-1 mb-2" style="font-size:0.85em;">
                                         @foreach (var reference in project.ProjectReferences)
                                         {
-                                            var refMissing = !Model.KnownProjectNames.Contains(reference);
+                                            var refMissing = !Model.KnownProjectPaths.ContainsKey(reference);
                                             <li class="@(refMissing ? "text-danger" : "")">
                                                 @reference
                                                 @if (refMissing)
@@ -171,9 +184,9 @@ else
                                     <ul class="ms-3 mt-1 mb-2" style="font-size:0.85em;">
                                         @foreach (var dep in project.Dependencies)
                                         {
-                                            var depMissing = !Model.KnownProjectNames.Contains(dep);
+                                            var depMissing = dep.ProjectPath == null;
                                             <li class="@(depMissing ? "text-danger" : "")">
-                                                @dep
+                                                @dep.Name
                                                 @if (depMissing)
                                                 {
                                                     <small>(not found)</small>
@@ -242,8 +255,31 @@ else
                 var projectPath = this.getAttribute('data-project-path');
                 var target = this.getAttribute('data-target');
                 var config = getSelectedConfiguration();
-                var url = '/api/process/' + action + '?projectId=' + projectId + '&projectPath=' + projectPath + '&configuration=' + encodeURIComponent(config);
-                htmx.ajax('POST', url, { target: target, swap: 'innerHTML' });
+                var buildDeps = document.getElementById('build-deps-checkbox').checked;
+                var deps = JSON.parse(this.getAttribute('data-dependencies') || '[]');
+
+                if (buildDeps && deps.length > 0) {
+                    var url = '/api/process/build-chain';
+                    var body = JSON.stringify({
+                        projectId: projectId,
+                        projectPath: decodeURIComponent(projectPath),
+                        action: action,
+                        configuration: config,
+                        dependencyPaths: deps
+                    });
+                    fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: body
+                    }).then(function (r) { return r.text(); })
+                      .then(function (html) {
+                          document.querySelector(target).innerHTML = html;
+                          htmx.process(document.querySelector(target));
+                      });
+                } else {
+                    var url = '/api/process/' + action + '?projectId=' + projectId + '&projectPath=' + projectPath + '&configuration=' + encodeURIComponent(config);
+                    htmx.ajax('POST', url, { target: target, swap: 'innerHTML' });
+                }
             });
         });
 

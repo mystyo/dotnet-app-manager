@@ -111,6 +111,146 @@ public class ProcessManagerService
         }
     }
 
+    public ProcessInfo StartBuildChain(string projectId, List<string> dependencyPaths, string targetPath, string action, string? configuration = null)
+    {
+        var info = new ProcessInfo
+        {
+            ProjectId = projectId,
+            Command = $"{action} (with deps)"
+        };
+        _processes[info.Id] = info;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                // Build each dependency sequentially
+                foreach (var depPath in dependencyPaths)
+                {
+                    var depName = Path.GetFileNameWithoutExtension(depPath);
+                    info.AppendOutput($"[Building dependency: {depName}]");
+
+                    var args = string.IsNullOrEmpty(configuration) ? depPath : $"{depPath} -c {configuration}";
+                    var exitCode = await RunProcessToCompletionAsync(info, "build", args);
+
+                    if (exitCode != 0)
+                    {
+                        info.Status = ProcessStatus.Failed;
+                        info.AppendOutput($"[Dependency build failed: {depName}]");
+                        return;
+                    }
+
+                    info.AppendOutput($"[Dependency built: {depName}]");
+                }
+
+                // Now do the final action
+                var targetName = Path.GetFileNameWithoutExtension(targetPath);
+                info.AppendOutput($"[{action}: {targetName}]");
+
+                if (action == "build")
+                {
+                    var args = string.IsNullOrEmpty(configuration) ? targetPath : $"{targetPath} -c {configuration}";
+                    var exitCode = await RunProcessToCompletionAsync(info, "build", args);
+                    info.Status = exitCode == 0 ? ProcessStatus.Completed : ProcessStatus.Failed;
+                }
+                else
+                {
+                    // For run, start the process and leave it running
+                    var args = string.IsNullOrEmpty(configuration)
+                        ? $"--project {targetPath}"
+                        : $"--project {targetPath} -c {configuration}";
+                    RunAttachedProcess(info, "run", args, Path.GetDirectoryName(targetPath)!);
+                }
+            }
+            catch (Exception ex)
+            {
+                info.Status = ProcessStatus.Failed;
+                info.AppendOutput($"[Error: {ex.Message}]");
+            }
+        });
+
+        return info;
+    }
+
+    private async Task<int> RunProcessToCompletionAsync(ProcessInfo info, string dotnetCommand, string arguments)
+    {
+        var tcs = new TaskCompletionSource<int>();
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            Arguments = $"{dotnetCommand} {arguments}",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
+
+        process.OutputDataReceived += (_, e) =>
+        {
+            if (e.Data != null) info.AppendOutput(e.Data);
+        };
+
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data != null) info.AppendOutput(e.Data);
+        };
+
+        process.Exited += (_, _) =>
+        {
+            tcs.TrySetResult(process.ExitCode);
+        };
+
+        process.Start();
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+
+        return await tcs.Task;
+    }
+
+    private void RunAttachedProcess(ProcessInfo info, string dotnetCommand, string arguments, string workingDirectory)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            Arguments = $"{dotnetCommand} {arguments}",
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
+
+        process.OutputDataReceived += (_, e) =>
+        {
+            if (e.Data != null) info.AppendOutput(e.Data);
+        };
+
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data != null) info.AppendOutput(e.Data);
+        };
+
+        process.Exited += (_, _) =>
+        {
+            if (info.Status == ProcessStatus.Running)
+            {
+                info.Status = process.ExitCode == 0 ? ProcessStatus.Completed : ProcessStatus.Failed;
+            }
+            info.AppendOutput($"[Process exited with code {process.ExitCode}]");
+        };
+
+        info.SystemProcess = process;
+
+        process.Start();
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+    }
+
     private ProcessInfo StartProcess(string projectId, string projectPath, string command, string dotnetCommand, string arguments)
     {
         var info = new ProcessInfo
