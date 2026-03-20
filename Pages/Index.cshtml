@@ -132,17 +132,20 @@ else
                             <div id="console-@project.Id">
                                 @if (isRunning)
                                 {
-                                    <div class="console-wrapper mt-2" hx-ext="sse" sse-connect="/api/process/stream/@activeProcess!.Id">
-                                        <div class="d-flex justify-content-between align-items-center mb-1">
-                                            <small class="text-muted">Running...</small>
-                                            <button class="btn btn-sm btn-outline-danger"
-                                                    hx-post="/api/process/stop/@activeProcess!.Id"
-                                                    hx-target="closest .console-wrapper"
-                                                    hx-swap="afterbegin">
-                                                Stop
-                                            </button>
-                                        </div>
-                                        <pre class="console-output" sse-swap="message" hx-swap="beforeend"></pre>
+                                    <div class="console-wrapper mt-2" hx-ext="sse" sse-connect="/api/process/stream/@activeProcess!.Id" sse-close="close">
+                                        <details open>
+                                            <summary class="d-flex justify-content-between align-items-center mb-1" style="cursor:pointer;">
+                                                <small class="text-muted">Running...</small>
+                                                <button class="btn btn-sm btn-outline-danger"
+                                                        hx-post="/api/process/stop/@activeProcess!.Id"
+                                                        hx-target="closest .console-wrapper"
+                                                        hx-swap="afterbegin"
+                                                        onclick="event.stopPropagation();">
+                                                    Stop
+                                                </button>
+                                            </summary>
+                                            <pre class="console-output" sse-swap="message" hx-swap="beforeend"></pre>
+                                        </details>
                                     </div>
                                 }
                             </div>

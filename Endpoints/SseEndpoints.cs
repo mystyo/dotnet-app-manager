@@ -50,6 +50,8 @@ public static class SseEndpoints
             var finalStatus = info.Status.ToString().ToLowerInvariant();
             var badgeClass = info.Status == ProcessStatus.Completed ? "bg-success" : "bg-danger";
             await ctx.Response.WriteAsync($"event: status\ndata: <span class=\"badge {badgeClass}\">{finalStatus}</span>\n\n");
+            // Signal HTMX to close the SSE connection (prevents auto-reconnect)
+            await ctx.Response.WriteAsync("event: close\ndata: \n\n");
             await ctx.Response.Body.FlushAsync();
         });
     }
@@ -57,17 +59,20 @@ public static class SseEndpoints
     public static string RenderConsoleFragment(string processId, string initialMessage)
     {
         return $"""
-            <div class="console-wrapper mt-2" hx-ext="sse" sse-connect="/api/process/stream/{processId}">
-                <div class="d-flex justify-content-between align-items-center mb-1">
-                    <small class="text-muted">{initialMessage}</small>
-                    <button class="btn btn-sm btn-outline-danger"
-                            hx-post="/api/process/stop/{processId}"
-                            hx-target="closest .console-wrapper"
-                            hx-swap="afterbegin">
-                        Stop
-                    </button>
-                </div>
-                <pre class="console-output" sse-swap="message" hx-swap="beforeend"></pre>
+            <div class="console-wrapper mt-2" hx-ext="sse" sse-connect="/api/process/stream/{processId}" sse-close="close">
+                <details open>
+                    <summary class="d-flex justify-content-between align-items-center mb-1" style="cursor:pointer;">
+                        <small class="text-muted">{initialMessage}</small>
+                        <button class="btn btn-sm btn-outline-danger"
+                                hx-post="/api/process/stop/{processId}"
+                                hx-target="closest .console-wrapper"
+                                hx-swap="afterbegin"
+                                onclick="event.stopPropagation();">
+                            Stop
+                        </button>
+                    </summary>
+                    <pre class="console-output" sse-swap="message" hx-swap="beforeend"></pre>
+                </details>
             </div>
             """;
     }
