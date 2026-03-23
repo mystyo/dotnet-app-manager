@@ -1,0 +1,180 @@
+@using DotnetAppManager.Models
+@model (DiscoveredProject Project, ProcessInfo? ActiveProcess, Dictionary<string, string> KnownProjectPaths)
+@functions {
+    void RenderDependencyTree(List<DependencyNode> nodes, int depth, HashSet<string> rendered, string ownerProjectId)
+    {
+        foreach (var node in nodes)
+        {
+            if (!rendered.Add(node.Name))
+                continue;
+
+            if (node.Children.Count > 0)
+            {
+                RenderDependencyTree(node.Children, depth + 1, rendered, ownerProjectId);
+            }
+
+            var missing = node.ProjectPath == null;
+            var prefix = depth > 0 ? "└ " : "";
+            <li style="padding-left: @(depth * 1.2)rem;" class="d-flex align-items-center gap-2 @(missing ? "text-danger" : "")">
+                <span>@prefix@node.Name</span>
+                @if (missing)
+                {
+                    <small>(not found)</small>
+                }
+                else
+                {
+                    <button class="btn btn-outline-primary dep-build-btn" style="padding:0 .35rem; font-size:0.75em; line-height:1.4;"
+                            data-dep-path="@node.ProjectPath"
+                            data-dep-name="@node.Name"
+                            data-owner-project-id="@ownerProjectId">
+                        Build
+                    </button>
+                }
+            </li>
+        }
+    }
+}
+@{
+    var project = Model.Project;
+    var activeProcess = Model.ActiveProcess;
+    var isRunning = activeProcess != null;
+    var depPaths = System.Text.Json.JsonSerializer.Serialize(
+        project.DependencyBuildOrder
+            .Select(d => d.ProjectPath!)
+            .ToList());
+}
+
+<tr class="project-row" data-project-name="@project.Name.ToLowerInvariant()">
+    <td><input type="checkbox" class="project-select-checkbox" data-project-id="@project.Id" data-project-path="@Uri.EscapeDataString(project.FullPath)" checked></td>
+    <td>
+        <strong>@project.Name</strong>
+        <br /><small class="text-muted">.@project.ProjectFileType</small>
+    </td>
+    <td><code>@(project.TargetFramework ?? "N/A")</code></td>
+    <td><small class="text-muted" title="@project.FullPath">@project.Directory</small></td>
+    <td id="status-@project.Id"
+        hx-get="/api/process/status/@project.Id"
+        hx-trigger="every 3s"
+        hx-swap="innerHTML">
+        @if (isRunning)
+        {
+            <span class="badge bg-info">running</span>
+        }
+        else
+        {
+            <span class="badge bg-secondary">idle</span>
+        }
+    </td>
+    <td>
+        <div class="btn-group btn-group-sm" id="actions-@project.Id">
+            <button class="btn btn-outline-primary action-btn"
+                    data-action="build"
+                    data-project-id="@project.Id"
+                    data-project-path="@Uri.EscapeDataString(project.FullPath)"
+                    data-target="#console-@project.Id"
+                    data-dependencies="@depPaths">
+                Build
+            </button>
+            <button class="btn btn-outline-success action-btn"
+                    data-action="run"
+                    data-project-id="@project.Id"
+                    data-project-path="@Uri.EscapeDataString(project.FullPath)"
+                    data-target="#console-@project.Id"
+                    data-dependencies="@depPaths">
+                Run
+            </button>
+        </div>
+    </td>
+</tr>
+<tr class="project-row" data-project-name="@project.Name.ToLowerInvariant()">
+    <td colspan="6" class="p-0 border-0">
+        <div id="console-@project.Id">
+            @if (isRunning)
+            {
+                <div class="console-wrapper mt-2" hx-ext="sse" sse-connect="/api/process/stream/@activeProcess!.Id" sse-close="close">
+                    <details open>
+                        <summary class="d-flex justify-content-between align-items-center mb-1" style="cursor:pointer;">
+                            <small class="text-muted">Running...</small>
+                        </summary>
+                        <pre class="console-output" sse-swap="message" hx-swap="beforeend"></pre>
+                    </details>
+                </div>
+            }
+        </div>
+    </td>
+</tr>
+@if (project.ProjectReferences.Count > 0)
+{
+    <tr class="project-row" data-project-name="@project.Name.ToLowerInvariant()">
+        <td colspan="6" class="p-0 border-0">
+            <details class="mx-3 mb-2">
+                <summary class="text-muted" style="cursor:pointer; font-size:0.85em;">
+                    Project References (@project.ProjectReferences.Count)
+                </summary>
+                <ul class="ms-3 mt-1 mb-2" style="font-size:0.85em;">
+                    @foreach (var reference in project.ProjectReferences)
+                    {
+                        var refMissing = !Model.KnownProjectPaths.ContainsKey(reference);
+                        <li class="@(refMissing ? "text-danger" : "")">
+                            @reference
+                            @if (refMissing)
+                            {
+                                <small>(not found)</small>
+                            }
+                        </li>
+                    }
+                </ul>
+            </details>
+        </td>
+    </tr>
+}
+@if (project.DependencyTree.Count > 0)
+{
+    var directCount = project.DependencyNames.Count;
+    var totalCount = project.DependencyBuildOrder.Count;
+    var nestedCount = totalCount - directCount;
+    <tr class="project-row" data-project-name="@project.Name.ToLowerInvariant()">
+        <td colspan="6" class="p-0 border-0">
+            <details class="mx-3 mb-2">
+                <summary class="text-muted" style="cursor:pointer; font-size:0.85em;">
+                    Dependencies (@directCount direct@(nestedCount > 0 ? $", {nestedCount} nested" : ""))
+                </summary>
+                <ul class="ms-3 mt-1 mb-2" style="font-size:0.85em; list-style: none; padding-left: 0;">
+                    @{ RenderDependencyTree(project.DependencyTree, 0, new HashSet<string>(StringComparer.OrdinalIgnoreCase), project.Id); }
+                </ul>
+            </details>
+        </td>
+    </tr>
+}
+@if (project.AppSettings.Count > 0)
+{
+    <tr class="project-row" data-project-name="@project.Name.ToLowerInvariant()">
+        <td colspan="6" class="p-0 border-0">
+            <details class="mx-3 mb-2">
+                <summary class="text-muted" style="cursor:pointer; font-size:0.85em;">
+                    App Settings (@project.AppSettings.Count file(s))
+                </summary>
+                @foreach (var (fileName, settings) in project.AppSettings)
+                {
+                    <div class="ms-3 mt-1">
+                        <strong class="small">@fileName</strong>
+                        <table class="table table-sm table-bordered mt-1 mb-2" style="font-size:0.8em;">
+                            <thead class="table-dark">
+                                <tr><th>Key</th><th>Value</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var (key, value) in settings)
+                                {
+                                    <tr>
+                                        <td><code>@key</code></td>
+                                        <td>@value</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </details>
+        </td>
+    </tr>
+}

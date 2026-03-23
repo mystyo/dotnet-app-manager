@@ -46,7 +46,7 @@ public static class SseEndpoints
                 }
             }
 
-            // Send final status event
+            // Send final status event — replaces the summary text + stop button
             var finalStatus = info.Status.ToString().ToLowerInvariant();
             var badgeClass = info.Status == ProcessStatus.Completed ? "bg-success" : "bg-danger";
             await ctx.Response.WriteAsync($"event: status\ndata: <span class=\"badge {badgeClass}\">{finalStatus}</span>\n\n");
@@ -62,14 +62,9 @@ public static class SseEndpoints
             <div class="console-wrapper mt-2" hx-ext="sse" sse-connect="/api/process/stream/{processId}" sse-close="close">
                 <details open>
                     <summary class="d-flex justify-content-between align-items-center mb-1" style="cursor:pointer;">
-                        <small class="text-muted">{initialMessage}</small>
-                        <button class="btn btn-sm btn-outline-danger"
-                                hx-post="/api/process/stop/{processId}"
-                                hx-target="closest .console-wrapper"
-                                hx-swap="afterbegin"
-                                onclick="event.stopPropagation();">
-                            Stop
-                        </button>
+                        <span class="console-summary-text" sse-swap="status" hx-swap="innerHTML">
+                            <small class="text-muted">{initialMessage}</small>
+                        </span>
                     </summary>
                     <pre class="console-output" sse-swap="message" hx-swap="beforeend"></pre>
                 </details>
