@@ -7,6 +7,10 @@ public class AppConfig
     public List<TargetFolder> TargetFolders { get; set; } = [];
     public List<string> BuildConfigurations { get; set; } = ["Debug", "Release"];
     public string? DefaultBuildConfiguration { get; set; }
+    public string? NugetSourcePath { get; set; }
+    public string? MigrationAssemblyPath { get; set; }
+    public string MigrationProjectSuffix { get; set; } = "Db.Migrations";
+    public string? MigrationConnectionString { get; set; }
 
     [JsonIgnore]
     public List<string> EnabledFolderPaths => TargetFolders

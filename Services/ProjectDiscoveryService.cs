@@ -13,6 +13,44 @@ public class ProjectDiscoveryService
         "TargetFramework", "TargetFrameworks", "OutputType", "RootNamespace", "AssemblyName"
     };
 
+    public List<DiscoveredProject> ScanFoldersBySuffix(IEnumerable<string> folderPaths, string suffix)
+    {
+        var paths = folderPaths.ToList();
+        Func<string, bool> filter = file =>
+            Path.GetFileNameWithoutExtension(file).EndsWith(suffix, StringComparison.OrdinalIgnoreCase);
+
+        var results = new List<DiscoveredProject>();
+        foreach (var path in paths)
+            results.AddRange(ScanFolder(path, filter));
+
+        var projects = results
+            .GroupBy(p => p.Id)
+            .Select(g => g.First())
+            .OrderBy(p => p.Name)
+            .ToList();
+
+        // Resolve dependency trees within the scanned set
+        var projectMap = ScanAllProjectPaths(paths);
+        var depGraph = BuildDependencyGraph(projectMap);
+
+        foreach (var project in projects)
+        {
+            project.DependencyTree = project.DependencyNames
+                .Select(name => BuildDependencyTree(name, projectMap, depGraph, []))
+                .ToList();
+
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var buildOrder = new List<DependencyNode>();
+            foreach (var node in project.DependencyTree)
+            {
+                FlattenBuildOrder(node, visited, buildOrder);
+            }
+            project.DependencyBuildOrder = buildOrder;
+        }
+
+        return projects;
+    }
+
     public List<DiscoveredProject> ScanFolders(IEnumerable<string> folderPaths)
     {
         var paths = folderPaths.ToList();
@@ -20,7 +58,7 @@ public class ProjectDiscoveryService
         var depGraph = BuildDependencyGraph(projectMap);
 
         var projects = paths
-            .SelectMany(ScanFolder)
+            .SelectMany(p => ScanFolder(p))
             .GroupBy(p => p.Id)
             .Select(g => g.First())
             .OrderBy(p => p.Name)
@@ -196,10 +234,16 @@ public class ProjectDiscoveryService
         return graph;
     }
 
-    private List<DiscoveredProject> ScanFolder(string folderPath)
+    private List<DiscoveredProject> ScanFolder(string folderPath, Func<string, bool>? filter = null)
     {
         if (!Directory.Exists(folderPath))
             return [];
+
+        filter ??= file =>
+        {
+            var projectDir = Path.GetDirectoryName(file)!;
+            return File.Exists(Path.Combine(projectDir, "Properties", "launchSettings.json"));
+        };
 
         var projects = new List<DiscoveredProject>();
 
@@ -210,9 +254,7 @@ public class ProjectDiscoveryService
         {
             try
             {
-                var projectDir = Path.GetDirectoryName(file)!;
-                var launchSettings = Path.Combine(projectDir, "Properties", "launchSettings.json");
-                if (!File.Exists(launchSettings))
+                if (!filter(file))
                     continue;
 
                 var project = ParseProjectFile(file);

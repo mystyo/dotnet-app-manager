@@ -41,6 +41,36 @@ public class ProcessManagerService
         return StartProcess(projectId, projectPath, "run", "run", args);
     }
 
+    public ProcessInfo StartMigration(string projectId, string assemblyPath, string assemblyName, string connectionString, string nugetSourcePath)
+    {
+        var info = new ProcessInfo
+        {
+            ProjectId = projectId,
+            Command = $"migrate {assemblyName}"
+        };
+        _processes[info.Id] = info;
+
+        var args = $"up -p LocalDev -c \"{connectionString}\" -n \"{assemblyName}\" -ns \"{nugetSourcePath}\" -hk PostDeployment";
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                info.AppendOutput($"[Running migration: {assemblyName}]");
+                var exitCode = await RunProcessToCompletionAsync(info, assemblyPath, args);
+                info.Status = exitCode == 0 ? ProcessStatus.Completed : ProcessStatus.Failed;
+                info.AppendOutput(exitCode == 0 ? "[Migration completed]" : $"[Migration failed with exit code {exitCode}]");
+            }
+            catch (Exception ex)
+            {
+                info.Status = ProcessStatus.Failed;
+                info.AppendOutput($"[Error: {ex.Message}]");
+            }
+        });
+
+        return info;
+    }
+
     public void StopProcess(string processId)
     {
         if (!_processes.TryGetValue(processId, out var info))

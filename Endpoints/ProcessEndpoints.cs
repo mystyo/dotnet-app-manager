@@ -28,7 +28,7 @@ public static class ProcessEndpoints
             return Results.Content(SseEndpoints.RenderConsoleFragment(info.Id, "Starting..."), "text/html");
         });
 
-        app.MapPost("/api/process/build-chain", async (HttpContext ctx, ProcessManagerService mgr, ProjectDiscoveryService discovery, ConfigService cfg) =>
+        app.MapPost("/api/process/build-chain", async (HttpContext ctx, ProcessManagerService mgr, ProjectDiscoveryService discovery, ConfigService cfg, ChangeDetectionService changeDetection) =>
         {
             using var doc = await JsonDocument.ParseAsync(ctx.Request.Body);
             var root = doc.RootElement;
@@ -36,6 +36,7 @@ public static class ProcessEndpoints
             var projectPath = root.GetProperty("projectPath").GetString()!;
             var action = root.GetProperty("action").GetString()!;
             var configuration = root.TryGetProperty("configuration", out var cfgEl) ? cfgEl.GetString() : null;
+            var changesOnly = root.TryGetProperty("changesOnly", out var coEl) && coEl.GetBoolean();
             var dependencyPaths = root.GetProperty("dependencyPaths").EnumerateArray()
                 .Select(e => e.GetString()!)
                 .ToList();
@@ -45,17 +46,33 @@ public static class ProcessEndpoints
                 return Results.Content(SseEndpoints.RenderConsoleFragment(existing.Id, "Already running..."), "text/html");
 
             // Compute waves server-side for parallel execution
-            var projectMap = discovery.ScanAllProjectPaths(cfg.GetConfig().EnabledFolderPaths);
+            var appConfig = cfg.GetConfig();
+            var projectMap = discovery.ScanAllProjectPaths(appConfig.EnabledFolderPaths);
             var depGraph = discovery.BuildDependencyGraph(projectMap);
             var flatNodes = dependencyPaths.Select(p => new DotnetAppManager.Models.DependencyNode
             {
                 Name = Path.GetFileNameWithoutExtension(p),
                 ProjectPath = p
             }).ToList();
+
+            // Filter to changed dependencies only if requested
+            if (changesOnly && !string.IsNullOrEmpty(appConfig.NugetSourcePath))
+            {
+                flatNodes = changeDetection.GetChangedDependencies(flatNodes, appConfig.NugetSourcePath, depGraph);
+                if (flatNodes.Count == 0)
+                {
+                    // No dependencies changed — just run the final action directly
+                    var directInfo = action == "build"
+                        ? mgr.StartBuild(projectId, projectPath, configuration)
+                        : mgr.StartRun(projectId, projectPath, configuration);
+                    return Results.Content(SseEndpoints.RenderConsoleFragment(directInfo.Id, $"No dependency changes detected. {action}..."), "text/html");
+                }
+            }
+
             var waves = ProjectDiscoveryService.ComputeBuildWaves(flatNodes, depGraph);
 
             var info = mgr.StartParallelBuildWaves(projectId, waves, action, projectPath, configuration);
-            return Results.Content(SseEndpoints.RenderConsoleFragment(info.Id, $"Building {dependencyPaths.Count} dep(s) in {waves.Count} wave(s) then {action}..."), "text/html");
+            return Results.Content(SseEndpoints.RenderConsoleFragment(info.Id, $"Building {flatNodes.Count} dep(s) in {waves.Count} wave(s) then {action}..."), "text/html");
         });
 
         app.MapPost("/api/process/build-all", (string? configuration, string? profile, ProcessManagerService mgr, ConfigService cfg, ProjectDiscoveryService discovery, ProfileService profiles) =>
@@ -159,6 +176,24 @@ public static class ProcessEndpoints
                 _ => ("bg-secondary", "idle")
             };
             return Results.Content($"<span class=\"badge {badgeClass}\">{label}</span>", "text/html");
+        });
+
+        app.MapPost("/api/process/migrate", (string projectId, string assemblyName, ProcessManagerService mgr, ConfigService cfg) =>
+        {
+            var config = cfg.GetConfig();
+            if (string.IsNullOrEmpty(config.MigrationAssemblyPath))
+                return Results.Content("<div class='alert alert-warning'>Migration assembly path not configured.</div>", "text/html");
+            if (string.IsNullOrEmpty(config.MigrationConnectionString))
+                return Results.Content("<div class='alert alert-warning'>Migration connection string not configured.</div>", "text/html");
+            if (string.IsNullOrEmpty(config.NugetSourcePath))
+                return Results.Content("<div class='alert alert-warning'>NuGet source path not configured.</div>", "text/html");
+
+            var existing = mgr.GetActiveProcess(projectId);
+            if (existing != null)
+                return Results.Content(SseEndpoints.RenderConsoleFragment(existing.Id, "Already running..."), "text/html");
+
+            var info = mgr.StartMigration(projectId, config.MigrationAssemblyPath, assemblyName, config.MigrationConnectionString, config.NugetSourcePath);
+            return Results.Content(SseEndpoints.RenderConsoleFragment(info.Id, $"Running migration: {assemblyName}..."), "text/html");
         });
 
         app.MapPost("/api/project-preferences", async (HttpContext ctx, ProjectPreferencesService prefs) =>

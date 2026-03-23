@@ -9,6 +9,7 @@ builder.Services.AddTransient<ProjectDiscoveryService>();
 builder.Services.AddSingleton<ProcessManagerService>();
 builder.Services.AddSingleton<ProjectPreferencesService>();
 builder.Services.AddSingleton<ProfileService>();
+builder.Services.AddSingleton<ChangeDetectionService>();
 
 var app = builder.Build();
 

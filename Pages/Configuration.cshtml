@@ -105,6 +105,45 @@
             </div>
         </div>
 
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title">NuGet Local Source</h5>
+                <p class="card-text text-muted">Path to local NuGet package folder. Used by "Changes Only" to detect which dependencies need rebuilding.</p>
+                <form method="post" asp-page-handler="SetNugetSource">
+                    <div class="input-group">
+                        <input type="text" class="form-control" asp-for="NugetSourcePath"
+                               placeholder="/path/to/local/nuget/packages" />
+                        <button type="submit" class="btn btn-primary">Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title">DB Migrator</h5>
+                <p class="card-text text-muted">Configure the migration runner assembly and project suffix for discovering migration projects.</p>
+                <form method="post" asp-page-handler="SetMigrationSettings">
+                    <div class="mb-2">
+                        <label class="form-label small">Migration Assembly Path</label>
+                        <input type="text" class="form-control" asp-for="MigrationAssemblyPath"
+                               placeholder="/path/to/Migrator.dll" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Project Suffix</label>
+                        <input type="text" class="form-control" asp-for="MigrationProjectSuffix"
+                               placeholder="Db.Migrations" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Connection String</label>
+                        <input type="text" class="form-control" asp-for="MigrationConnectionString"
+                               placeholder="Server=localhost;Database=MyDb;..." />
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                </form>
+            </div>
+        </div>
+
         @if (Model.Message != null)
         {
             <div class="alert @(Model.IsError ? "alert-danger" : "alert-success")">

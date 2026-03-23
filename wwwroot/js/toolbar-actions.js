@@ -32,6 +32,7 @@ function initRunSelectedButton() {
     document.getElementById('run-selected-btn').addEventListener('click', function () {
         var config = getSelectedConfiguration();
         var buildDeps = document.getElementById('build-deps-checkbox').checked;
+        var changesOnly = document.getElementById('changes-only-checkbox').checked;
         var selected = document.querySelectorAll('.project-select-checkbox:checked');
         if (selected.length === 0) return;
         selected.forEach(function (cb) {
@@ -52,7 +53,8 @@ function initRunSelectedButton() {
                             projectPath: decodeURIComponent(projectPath),
                             action: 'run',
                             configuration: config,
-                            dependencyPaths: deps
+                            dependencyPaths: deps,
+                            changesOnly: changesOnly
                         })
                     }));
                     return;

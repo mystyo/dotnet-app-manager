@@ -53,6 +53,7 @@ function initProjectActionButtons() {
         var target = btn.getAttribute('data-target');
         var config = getSelectedConfiguration();
         var buildDeps = document.getElementById('build-deps-checkbox').checked;
+        var changesOnly = document.getElementById('changes-only-checkbox').checked;
         var deps = JSON.parse(btn.getAttribute('data-dependencies') || '[]');
 
         if (buildDeps && deps.length > 0) {
@@ -64,7 +65,8 @@ function initProjectActionButtons() {
                     projectPath: decodeURIComponent(projectPath),
                     action: action,
                     configuration: config,
-                    dependencyPaths: deps
+                    dependencyPaths: deps,
+                    changesOnly: changesOnly
                 })
             }));
         } else {

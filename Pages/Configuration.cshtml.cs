@@ -26,6 +26,18 @@ public class ConfigurationModel : PageModel
     [BindProperty]
     public string? NewBuildConfiguration { get; set; }
 
+    [BindProperty]
+    public string? NugetSourcePath { get; set; }
+
+    [BindProperty]
+    public string? MigrationAssemblyPath { get; set; }
+
+    [BindProperty]
+    public string MigrationProjectSuffix { get; set; } = "Db.Migrations";
+
+    [BindProperty]
+    public string? MigrationConnectionString { get; set; }
+
     public string? Message { get; set; }
     public bool IsError { get; set; }
     public int ProjectCount { get; set; }
@@ -147,12 +159,58 @@ public class ConfigurationModel : PageModel
         return Page();
     }
 
+    public IActionResult OnPostSetMigrationSettings()
+    {
+        var submittedAssemblyPath = MigrationAssemblyPath?.Trim();
+        var submittedSuffix = MigrationProjectSuffix?.Trim();
+        var submittedConnectionString = MigrationConnectionString?.Trim();
+        LoadFromConfig();
+        MigrationAssemblyPath = submittedAssemblyPath;
+        MigrationProjectSuffix = string.IsNullOrEmpty(submittedSuffix) ? "Db.Migrations" : submittedSuffix;
+        MigrationConnectionString = submittedConnectionString;
+
+        if (!string.IsNullOrEmpty(MigrationAssemblyPath) && !System.IO.File.Exists(MigrationAssemblyPath))
+        {
+            Message = $"File does not exist: {MigrationAssemblyPath}";
+            IsError = true;
+            return Page();
+        }
+
+        SaveAndReload();
+        Message = "Migration settings saved.";
+        return Page();
+    }
+
+    public IActionResult OnPostSetNugetSource()
+    {
+        var submittedPath = NugetSourcePath?.Trim();
+        LoadFromConfig();
+        NugetSourcePath = submittedPath;
+
+        if (!string.IsNullOrEmpty(NugetSourcePath) && !Directory.Exists(NugetSourcePath))
+        {
+            Message = $"Directory does not exist: {NugetSourcePath}";
+            IsError = true;
+            return Page();
+        }
+
+        SaveAndReload();
+        Message = string.IsNullOrEmpty(NugetSourcePath)
+            ? "NuGet source path cleared."
+            : $"NuGet source path set to: {NugetSourcePath}";
+        return Page();
+    }
+
     private void LoadFromConfig()
     {
         var config = _configService.GetConfig();
         TargetFolders = config.TargetFolders;
         BuildConfigurations = config.BuildConfigurations;
         DefaultBuildConfiguration = config.DefaultBuildConfiguration;
+        NugetSourcePath = config.NugetSourcePath;
+        MigrationAssemblyPath = config.MigrationAssemblyPath;
+        MigrationProjectSuffix = config.MigrationProjectSuffix;
+        MigrationConnectionString = config.MigrationConnectionString;
         ProjectCount = _discoveryService.ScanFolders(config.EnabledFolderPaths).Count;
     }
 
@@ -162,7 +220,11 @@ public class ConfigurationModel : PageModel
         {
             TargetFolders = TargetFolders,
             BuildConfigurations = BuildConfigurations,
-            DefaultBuildConfiguration = DefaultBuildConfiguration
+            DefaultBuildConfiguration = DefaultBuildConfiguration,
+            NugetSourcePath = NugetSourcePath,
+            MigrationAssemblyPath = MigrationAssemblyPath,
+            MigrationProjectSuffix = MigrationProjectSuffix,
+            MigrationConnectionString = MigrationConnectionString
         });
         ProjectCount = _discoveryService.ScanFolders(
             TargetFolders.Where(f => f.Enabled).Select(f => f.Path).ToList()

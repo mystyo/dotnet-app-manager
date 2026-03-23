@@ -31,7 +31,7 @@ else
                 @foreach (var project in Model.Projects)
                 {
                     var pref = Model.Preferences.GetValueOrDefault(project.FullPath) ?? new DotnetAppManager.Models.ProjectPreference();
-                    <tr class="@(pref.Ignored ? "table-secondary text-muted" : "")">
+                    <tr class="@(pref.Ignored ? "text-muted opacity-50" : "")">
                         <td><strong>@project.Name</strong></td>
                         <td><code>@(project.TargetFramework ?? "N/A")</code></td>
                         <td><small class="text-muted">@project.Directory</small></td>
@@ -71,7 +71,7 @@ else
         document.querySelectorAll('.pref-ignored').forEach(function (cb) {
             cb.addEventListener('change', function () {
                 var v = getRowValues(this);
-                v.row.className = v.ignored ? 'table-secondary text-muted' : '';
+                v.row.className = v.ignored ? 'text-muted opacity-50' : '';
                 savePreference(v.path, v.ignored, v.startOrder);
             });
         });

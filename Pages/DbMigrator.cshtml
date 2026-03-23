@@ -1,0 +1,145 @@
+@page
+@model DbMigratorModel
+@{
+    ViewData["Title"] = "DB Migrator";
+}
+
+<h4 class="mb-3">DB Migrator</h4>
+
+@if (string.IsNullOrEmpty(Model.MigrationAssemblyPath))
+{
+    <div class="alert alert-warning">
+        Migration assembly path is not configured. <a asp-page="/Configuration">Go to Configuration</a> to set it up.
+    </div>
+}
+
+<div class="row">
+    <div class="col-md-10">
+        @if (Model.MigrationProjects.Count > 0)
+        {
+            <div class="mb-3">
+                <input type="text" id="migration-search" class="form-control" placeholder="Filter migration projects by name..." autofocus />
+            </div>
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Migration Projects</h5>
+                    <p class="card-text text-muted">Projects matching suffix: <code>@Model.MigrationProjectSuffix</code></p>
+                    <table class="table table-sm">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Project</th>
+                                <th>Framework</th>
+                                <th>Path</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var project in Model.MigrationProjects)
+                            {
+                                <tr class="migration-row" data-project-name="@project.Name.ToLowerInvariant()">
+                                    <td><strong>@project.Name</strong></td>
+                                    <td><code>@(project.TargetFramework ?? "N/A")</code></td>
+                                    <td><small class="text-muted" title="@project.FullPath">@project.Directory</small></td>
+                                    <td id="status-@project.Id"
+                                        hx-get="/api/process/status/@project.Id"
+                                        hx-trigger="every 3s"
+                                        hx-swap="innerHTML">
+                                        <span class="badge bg-secondary">idle</span>
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-success migrate-btn"
+                                                data-project-id="@project.Id"
+                                                data-assembly-name="@project.Name"
+                                                data-target="#console-@project.Id">
+                                            Run
+                                        </button>
+                                    </td>
+                                </tr>
+                                <tr class="migration-row" data-project-name="@project.Name.ToLowerInvariant()">
+                                    <td colspan="5" class="p-0 border-0">
+                                        <div id="console-@project.Id"></div>
+                                    </td>
+                                </tr>
+                                @if (project.DependencyBuildOrder.Count > 0)
+                                {
+                                    <tr class="migration-row" data-project-name="@project.Name.ToLowerInvariant()">
+                                        <td colspan="5" class="p-0 border-0">
+                                            <details class="mx-3 mb-2">
+                                                <summary class="text-muted" style="cursor:pointer; font-size:0.85em;">
+                                                    Dependencies (@project.DependencyBuildOrder.Count)
+                                                </summary>
+                                                <ul class="ms-3 mt-1 mb-2" style="font-size:0.85em; list-style: none; padding-left: 0;">
+                                                    @foreach (var dep in project.DependencyBuildOrder)
+                                                    {
+                                                        var missing = dep.ProjectPath == null;
+                                                        <li class="d-flex align-items-center gap-2 @(missing ? "text-danger" : "")">
+                                                            <span>@dep.Name</span>
+                                                            @if (missing)
+                                                            {
+                                                                <small>(not found)</small>
+                                                            }
+                                                        </li>
+                                                    }
+                                                </ul>
+                                            </details>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="alert alert-info">
+                No migration projects found matching suffix <code>@Model.MigrationProjectSuffix</code>.
+            </div>
+        }
+    </div>
+    <div class="col-md-2">
+        <div class="card">
+            <div class="card-body text-center">
+                <h5 class="card-title">Found</h5>
+                <p class="display-6">@Model.MigrationProjects.Count</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        // Search filter
+        var searchInput = document.getElementById('migration-search');
+        if (searchInput) {
+            searchInput.addEventListener('input', function () {
+                var filter = this.value.toLowerCase();
+                document.querySelectorAll('.migration-row').forEach(function (row) {
+                    var name = row.getAttribute('data-project-name');
+                    row.style.display = name.includes(filter) ? '' : 'none';
+                });
+            });
+        }
+
+        // Run migration buttons
+        document.body.addEventListener('click', function (e) {
+            var btn = e.target.closest('.migrate-btn');
+            if (!btn) return;
+
+            var projectId = btn.getAttribute('data-project-id');
+            var assemblyName = btn.getAttribute('data-assembly-name');
+            var target = btn.getAttribute('data-target');
+
+            var url = '/api/process/migrate?projectId=' + projectId + '&assemblyName=' + encodeURIComponent(assemblyName);
+            fetch(url, { method: 'POST' })
+                .then(function (r) { return r.text(); })
+                .then(function (html) {
+                    var el = document.querySelector(target);
+                    el.innerHTML = html;
+                    htmx.process(el);
+                });
+        });
+    </script>
+}
