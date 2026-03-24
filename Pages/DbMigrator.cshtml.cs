@@ -18,12 +18,16 @@ public class DbMigratorModel : PageModel
     public List<DiscoveredProject> MigrationProjects { get; set; } = [];
     public string? MigrationAssemblyPath { get; set; }
     public string MigrationProjectSuffix { get; set; } = "Db.Migrations";
+    public List<string> BuildConfigurations { get; set; } = [];
+    public string? DefaultBuildConfiguration { get; set; }
 
     public void OnGet()
     {
         var config = _configService.GetConfig();
         MigrationAssemblyPath = config.MigrationAssemblyPath;
         MigrationProjectSuffix = config.MigrationProjectSuffix;
+        BuildConfigurations = config.BuildConfigurations;
+        DefaultBuildConfiguration = config.DefaultBuildConfiguration;
 
         var allMigrationProjects = _discoveryService.ScanFoldersBySuffix(config.EnabledFolderPaths, MigrationProjectSuffix);
 

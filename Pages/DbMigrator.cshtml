@@ -17,8 +17,15 @@
     <div class="col-md-10">
         @if (Model.MigrationProjects.Count > 0)
         {
-            <div class="mb-3">
+            <div class="d-flex gap-2 mb-3">
                 <input type="text" id="migration-search" class="form-control" placeholder="Filter migration projects by name..." autofocus />
+                <select id="build-configuration" class="form-select" style="width:auto; min-width:140px">
+                    @foreach (var cfg in Model.BuildConfigurations)
+                    {
+                        var isDefault = string.Equals(cfg, Model.DefaultBuildConfiguration, StringComparison.OrdinalIgnoreCase);
+                        <option value="@cfg" selected="@isDefault">@cfg</option>
+                    }
+                </select>
             </div>
             <div class="card">
                 <div class="card-body">
@@ -50,6 +57,7 @@
                                     <td>
                                         <button class="btn btn-sm btn-outline-success migrate-btn"
                                                 data-project-id="@project.Id"
+                                                data-project-path="@Uri.EscapeDataString(project.FullPath)"
                                                 data-assembly-name="@project.Name"
                                                 data-target="#console-@project.Id">
                                             Run
@@ -129,10 +137,12 @@
             if (!btn) return;
 
             var projectId = btn.getAttribute('data-project-id');
+            var projectPath = btn.getAttribute('data-project-path');
             var assemblyName = btn.getAttribute('data-assembly-name');
             var target = btn.getAttribute('data-target');
+            var configuration = document.getElementById('build-configuration').value;
 
-            var url = '/api/process/migrate?projectId=' + projectId + '&assemblyName=' + encodeURIComponent(assemblyName);
+            var url = '/api/process/migrate?projectId=' + projectId + '&projectPath=' + projectPath + '&assemblyName=' + encodeURIComponent(assemblyName) + '&configuration=' + encodeURIComponent(configuration);
             fetch(url, { method: 'POST' })
                 .then(function (r) { return r.text(); })
                 .then(function (html) {

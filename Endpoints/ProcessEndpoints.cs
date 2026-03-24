@@ -178,7 +178,7 @@ public static class ProcessEndpoints
             return Results.Content($"<span class=\"badge {badgeClass}\">{label}</span>", "text/html");
         });
 
-        app.MapPost("/api/process/migrate", (string projectId, string assemblyName, ProcessManagerService mgr, ConfigService cfg) =>
+        app.MapPost("/api/process/migrate", (string projectId, string projectPath, string assemblyName, string? configuration, ProcessManagerService mgr, ConfigService cfg, ProjectDiscoveryService discovery, ChangeDetectionService changeDetection) =>
         {
             var config = cfg.GetConfig();
             if (string.IsNullOrEmpty(config.MigrationAssemblyPath))
@@ -192,8 +192,41 @@ public static class ProcessEndpoints
             if (existing != null)
                 return Results.Content(SseEndpoints.RenderConsoleFragment(existing.Id, "Already running..."), "text/html");
 
-            var info = mgr.StartMigration(projectId, config.MigrationAssemblyPath, assemblyName, config.MigrationConnectionString, config.NugetSourcePath);
-            return Results.Content(SseEndpoints.RenderConsoleFragment(info.Id, $"Running migration: {assemblyName}..."), "text/html");
+            var decodedProjectPath = Uri.UnescapeDataString(projectPath);
+
+            // Resolve dependencies and detect changes (same as Dashboard build-chain)
+            var projectMap = discovery.ScanAllProjectPaths(config.EnabledFolderPaths);
+            var depGraph = discovery.BuildDependencyGraph(projectMap);
+
+            // Find the migration project to get its dependency build order
+            var migrationProjects = discovery.ScanFoldersBySuffix(config.EnabledFolderPaths, config.MigrationProjectSuffix);
+            var migrationProject = migrationProjects.FirstOrDefault(p => p.FullPath.Equals(decodedProjectPath, StringComparison.OrdinalIgnoreCase));
+
+            List<List<DependencyNode>>? waves = null;
+            if (migrationProject != null && migrationProject.DependencyBuildOrder.Count > 0)
+            {
+                var flatNodes = migrationProject.DependencyBuildOrder
+                    .Where(d => d.ProjectPath != null)
+                    .ToList();
+
+                // Filter to only changed dependencies (NuGet older than source)
+                if (!string.IsNullOrEmpty(config.NugetSourcePath))
+                {
+                    flatNodes = changeDetection.GetChangedDependencies(flatNodes, config.NugetSourcePath, depGraph);
+                }
+
+                if (flatNodes.Count > 0)
+                {
+                    waves = ProjectDiscoveryService.ComputeBuildWaves(flatNodes, depGraph);
+                }
+            }
+
+            var info = mgr.StartMigration(projectId, decodedProjectPath, config.MigrationAssemblyPath, assemblyName, config.MigrationConnectionString, config.NugetSourcePath, configuration, waves);
+            var depCount = waves?.Sum(w => w.Count) ?? 0;
+            var message = depCount > 0
+                ? $"Building {depCount} dep(s) then migration: {assemblyName}..."
+                : $"Building & running migration: {assemblyName}...";
+            return Results.Content(SseEndpoints.RenderConsoleFragment(info.Id, message), "text/html");
         });
 
         app.MapPost("/api/project-preferences", async (HttpContext ctx, ProjectPreferencesService prefs) =>

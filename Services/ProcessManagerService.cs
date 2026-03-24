@@ -41,7 +41,7 @@ public class ProcessManagerService
         return StartProcess(projectId, projectPath, "run", "run", args);
     }
 
-    public ProcessInfo StartMigration(string projectId, string assemblyPath, string assemblyName, string connectionString, string nugetSourcePath)
+    public ProcessInfo StartMigration(string projectId, string projectPath, string assemblyPath, string assemblyName, string connectionString, string nugetSourcePath, string? configuration = null, List<List<DependencyNode>>? dependencyWaves = null)
     {
         var info = new ProcessInfo
         {
@@ -50,14 +50,61 @@ public class ProcessManagerService
         };
         _processes[info.Id] = info;
 
-        var args = $"up -p LocalDev -c \"{connectionString}\" -n \"{assemblyName}\" -ns \"{nugetSourcePath}\" -hk PostDeployment";
+        var migrationArgs = $"up -p LocalDev -c \"{connectionString}\" -n \"{assemblyName}\" -ns \"{nugetSourcePath}\" -hk PostDeployment";
 
         _ = Task.Run(async () =>
         {
             try
             {
+                // Build changed dependencies in parallel waves
+                if (dependencyWaves != null && dependencyWaves.Count > 0)
+                {
+                    for (var i = 0; i < dependencyWaves.Count; i++)
+                    {
+                        var wave = dependencyWaves[i];
+                        var names = string.Join(", ", wave.Select(n => n.Name));
+                        info.AppendOutput($"[Wave {i + 1}/{dependencyWaves.Count}: building {names} in parallel]");
+
+                        var tasks = wave.Select(node => Task.Run(async () =>
+                        {
+                            var args = string.IsNullOrEmpty(configuration) ? node.ProjectPath! : $"{node.ProjectPath!} -c {configuration}";
+                            var code = await RunProcessToCompletionAsync(info, "build", args, node.Name);
+                            return (node.Name, code);
+                        })).ToList();
+
+                        var results = await Task.WhenAll(tasks);
+
+                        foreach (var (name, code) in results)
+                        {
+                            if (code != 0)
+                            {
+                                info.Status = ProcessStatus.Failed;
+                                info.AppendOutput($"[Wave {i + 1} FAILED: {name} exited with code {code}]");
+                                return;
+                            }
+                        }
+
+                        info.AppendOutput($"[Wave {i + 1} completed]");
+                    }
+                }
+
+                // Build the migration project itself
+                var buildArgs = string.IsNullOrEmpty(configuration) ? projectPath : $"{projectPath} -c {configuration}";
+                info.AppendOutput($"[Building migration project: {assemblyName}]");
+                info.AppendOutput($"[Command: dotnet build {buildArgs}]");
+                var buildExitCode = await RunProcessToCompletionAsync(info, "build", buildArgs);
+                if (buildExitCode != 0)
+                {
+                    info.Status = ProcessStatus.Failed;
+                    info.AppendOutput($"[Build failed with exit code {buildExitCode}]");
+                    return;
+                }
+                info.AppendOutput("[Build completed]");
+
+                // Run the migration
                 info.AppendOutput($"[Running migration: {assemblyName}]");
-                var exitCode = await RunProcessToCompletionAsync(info, assemblyPath, args);
+                info.AppendOutput($"[Command: dotnet {assemblyPath} {migrationArgs}]");
+                var exitCode = await RunProcessToCompletionAsync(info, assemblyPath, migrationArgs);
                 info.Status = exitCode == 0 ? ProcessStatus.Completed : ProcessStatus.Failed;
                 info.AppendOutput(exitCode == 0 ? "[Migration completed]" : $"[Migration failed with exit code {exitCode}]");
             }
