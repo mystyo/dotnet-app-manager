@@ -50,7 +50,9 @@ public class ProcessManagerService
         };
         _processes[info.Id] = info;
 
-        var migrationArgs = $"up -p LocalDev -c \"{connectionString}\" -n \"{assemblyName}\" -ns \"{nugetSourcePath}\" -hk PostDeployment";
+        var baseArgs = $"up -p LocalDev -c \"{connectionString}\" -n \"{assemblyName}\" -ns \"{nugetSourcePath}\"";
+        var preDeployArgs = $"{baseArgs} -hk PreDeployment";
+        var postDeployArgs = $"{baseArgs} -hk PostDeployment";
 
         _ = Task.Run(async () =>
         {
@@ -101,12 +103,24 @@ public class ProcessManagerService
                 }
                 info.AppendOutput("[Build completed]");
 
-                // Run the migration
-                info.AppendOutput($"[Running migration: {assemblyName}]");
-                info.AppendOutput($"[Command: dotnet {assemblyPath} {migrationArgs}]");
-                var exitCode = await RunProcessToCompletionAsync(info, assemblyPath, migrationArgs);
-                info.Status = exitCode == 0 ? ProcessStatus.Completed : ProcessStatus.Failed;
-                info.AppendOutput(exitCode == 0 ? "[Migration completed]" : $"[Migration failed with exit code {exitCode}]");
+                // Run PreDeployment migration
+                info.AppendOutput($"[Running PreDeployment migration: {assemblyName}]");
+                info.AppendOutput($"[Command: dotnet {assemblyPath} {preDeployArgs}]");
+                var preExitCode = await RunProcessToCompletionAsync(info, assemblyPath, preDeployArgs);
+                if (preExitCode != 0)
+                {
+                    info.Status = ProcessStatus.Failed;
+                    info.AppendOutput($"[PreDeployment migration failed with exit code {preExitCode}]");
+                    return;
+                }
+                info.AppendOutput("[PreDeployment migration completed]");
+
+                // Run PostDeployment migration
+                info.AppendOutput($"[Running PostDeployment migration: {assemblyName}]");
+                info.AppendOutput($"[Command: dotnet {assemblyPath} {postDeployArgs}]");
+                var postExitCode = await RunProcessToCompletionAsync(info, assemblyPath, postDeployArgs);
+                info.Status = postExitCode == 0 ? ProcessStatus.Completed : ProcessStatus.Failed;
+                info.AppendOutput(postExitCode == 0 ? "[PostDeployment migration completed]" : $"[PostDeployment migration failed with exit code {postExitCode}]");
             }
             catch (Exception ex)
             {
